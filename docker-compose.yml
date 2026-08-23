@@ -1,0 +1,79 @@
+# RuralAI — local development stack.
+#
+# Default (`docker compose up`) runs the Core API against the hosted Supabase
+# project, plus Redis for the job queue and the Socket.IO adapter.
+#
+# The `local-db` profile additionally starts a local Postgres, for working
+# offline or testing migrations destructively:
+#     docker compose --profile local-db up
+#
+# NOTE: Docker is not installed on the current dev machine, so this file has
+# been written but not yet executed. Verify before relying on it for the demo.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ruralai-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 4000
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '${PORT:-4000}:4000'
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      # Live reload in development. Anonymous volume keeps container
+      # node_modules from being shadowed by the host directory.
+      - .:/app
+      - /app/node_modules
+      - ./public/temp:/app/public/temp
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://localhost:4000/api/v1/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: ruralai-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # Optional local Postgres. Not used when pointing at hosted Supabase.
+  postgres:
+    image: postgres:17-alpine
+    container_name: ruralai-postgres
+    profiles: ['local-db']
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ruralai
+    ports:
+      - '5432:5432'
+    volumes:
+      - ./db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis-data:
