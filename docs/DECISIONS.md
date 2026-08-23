@@ -344,3 +344,68 @@ misreport a client bug as a provider failure.
 
 `POST /intake/visits/:id/symptoms` with `inputMode: "voice"` returns 503
 `STT_NOT_CONFIGURED` rather than storing an untranscribed entry.
+
+---
+
+## D-026 — Bhojpuri removed from the demo language set
+Per owner instruction. Demo languages are now Hindi, Bengali, Tamil, English.
+
+**Consequence worth knowing:** Bhojpuri was the only language Google Cloud STT
+could not serve. With it gone, *either* provider covers the full set alone, so
+Bhashini is now a preference (cost, and the Government-of-India platform story
+for the demo) rather than a necessity. The fallback chain is now genuine
+redundancy instead of a coverage requirement.
+
+The skip-don't-substitute rule in the failover chain stays. It is a safety
+property of the chain, not a Bhojpuri workaround.
+
+---
+
+## D-027 — Triage thresholds are UNVALIDATED pending physician sign-off
+`services/triage/rules.js` implements thresholds derived from published
+sources — NEWS2 (adult physiology), WHO IMCI (paediatric danger signs), PALS
+(age-banded respiratory rates). Each rule cites its source in its output.
+
+**They have not been reviewed by a clinician for this deployment.** The
+ruleset version is stamped `2026.08.1-unvalidated` and appears on every
+assessment. The golden case suite is likewise constructed, not clinically
+reviewed.
+
+This is the highest-priority external dependency in the project. Until a
+registered physician signs off both the thresholds and the golden cases, the
+system must not be used for real patients, and the README carries a "not for
+clinical use" notice.
+
+---
+
+## D-028 — The triage invariant is enforced in exactly one place
+`final_tier = MAX(rule_tier, model_tier)`, implemented once in
+`services/triage/engine.js` rather than trusted to callers.
+
+Fail-safe behaviour, in order of how badly each would otherwise go wrong:
+- Model throws, times out, or returns unparseable output -> **MEDIUM**.
+  A degraded AI must never mean "send them home".
+- Model returns a tier below the rule floor -> floor wins, and
+  `modelAttemptedDeEscalation` is recorded. That flag is the signal that the
+  model is miscalibrated in the one direction that harms patients, and it is
+  worth watching in aggregate.
+- **No model configured at all -> minimum MEDIUM.** Rules alone cannot
+  justify LOW: they see only vitals and a red-flag phrase list, so anything
+  they miss would otherwise go home unreviewed. This is why the system
+  currently floors every case at MEDIUM — there is no LLM wired yet.
+
+---
+
+## D-029 — Golden cases run against a model that always says LOW
+The golden suite drives the engine with a stub model that insists every
+patient is fine. Every escalation therefore has to come from the
+deterministic rule floor, against active disagreement.
+
+The first version ran with no model at all, and the engine's "no model ->
+MEDIUM" fallback silently masked whether the rules had fired — two LOW cases
+passed for the wrong reason. Caught by the `exact: true` assertions.
+
+24 cases covering: vitals-only escalation, symptom red flags with entirely
+normal vitals (the cases a vitals-only system misses), IMCI danger signs,
+neonates, and missing-data fail-safes. Under-triage fails the build;
+over-triage is permitted except where `exact: true`.
