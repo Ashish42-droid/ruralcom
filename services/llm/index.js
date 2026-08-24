@@ -11,7 +11,7 @@
  * standing in front of a patient waiting.
  */
 import logger from '../../config/logger.js';
-import { HostedLlmAdapter, SelfHostedLlmAdapter } from './adapters.js';
+import { GroqLlmAdapter, SelfHostedLlmAdapter } from './adapters.js';
 
 export class AllLlmProvidersFailedError extends Error {
   constructor(attempts) {
@@ -104,8 +104,13 @@ export class LlmService {
 export function createLlmService(env = process.env) {
   const providers = [];
 
-  if (env.LLM_API_KEY) {
-    providers.push(new HostedLlmAdapter({ modelId: env.LLM_MODEL_ID ?? null }));
+  if (env.GROQ_API_KEY) {
+    providers.push(
+      new GroqLlmAdapter({
+        apiKey: env.GROQ_API_KEY,
+        modelId: env.GROQ_MODEL_ID || undefined,
+      }),
+    );
   }
 
   if (env.SELF_HOSTED_LLM_BASE_URL) {

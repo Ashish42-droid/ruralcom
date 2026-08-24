@@ -1,8 +1,13 @@
 /**
  * LLM assessment layer — output validation and failover.
  *
- * The adapters are stubs that throw; that is asserted, so nobody can
- * quietly "fix" the suite by returning a canned assessment.
+ * GroqLlmAdapter is real code (D-035), so it is tested here with an
+ * INJECTED fake `fetch` — the suite never makes a real network call. No
+ * automated test may spend the owner's Groq quota or depend on the network
+ * being up; that is what tests/../scripts/llm-smoke.js is for instead.
+ *
+ * SelfHostedLlmAdapter remains a stub that throws; that is asserted, so
+ * nobody can quietly "fix" the suite by returning a canned assessment.
  */
 import { LlmService, createLlmService, AllLlmProvidersFailedError } from '../services/llm/index.js';
 import {
@@ -11,7 +16,7 @@ import {
   LlmNotImplementedError,
   InvalidModelOutputError,
 } from '../services/llm/LlmProvider.js';
-import { HostedLlmAdapter, SelfHostedLlmAdapter } from '../services/llm/adapters.js';
+import { GroqLlmAdapter, SelfHostedLlmAdapter } from '../services/llm/adapters.js';
 import { runAssessment, TIER } from '../services/triage/engine.js';
 
 const INPUT = {
@@ -39,13 +44,104 @@ class FakeLlm extends LlmProvider {
   }
 }
 
-describe('the adapters are deliberately NOT implemented', () => {
-  it('HostedLlmAdapter throws and names what it needs', async () => {
-    await expect(new HostedLlmAdapter().assess(INPUT)).rejects.toThrow(LlmNotImplementedError);
-    await expect(new HostedLlmAdapter().assess(INPUT)).rejects.toThrow(/LLM_API_KEY/);
+/** Builds a fake `fetch` that returns one JSON body without any network call. */
+function fakeFetchReturning(content, { ok = true, status = 200 } = {}) {
+  return async () => ({
+    ok,
+    status,
+    json: async () => ({ choices: [{ message: { content } }] }),
+    text: async () => (typeof content === 'string' ? content : JSON.stringify(content)),
+  });
+}
+
+/** A fake `fetch` that rejects, simulating a network failure. */
+function fakeFetchRejecting(message) {
+  return async () => {
+    throw new Error(message);
+  };
+}
+
+describe('GroqLlmAdapter requires configuration', () => {
+  it('refuses to construct without an API key', () => {
+    expect(() => new GroqLlmAdapter({})).toThrow(TypeError);
   });
 
+  it('defaults to llama-3.3-70b-versatile', () => {
+    const adapter = new GroqLlmAdapter({ apiKey: 'x' });
+    expect(adapter.modelId).toBe('llama-3.3-70b-versatile');
+  });
+});
+
+describe('GroqLlmAdapter — real code, network fully mocked', () => {
+  it('parses a well-formed JSON response into a valid assessment', async () => {
+    const adapter = new GroqLlmAdapter({
+      apiKey: 'test-key',
+      fetchImpl: fakeFetchReturning(JSON.stringify(VALID_OUTPUT)),
+    });
+
+    const result = await adapter.assess(INPUT);
+    expect(result.tier).toBe('low');
+    expect(result.provider).toBe('groq');
+  });
+
+  it('sends the API key as a Bearer token and asks for JSON mode', async () => {
+    let capturedInit;
+    const fetchImpl = async (_url, init) => {
+      capturedInit = init;
+      return fakeFetchReturning(JSON.stringify(VALID_OUTPUT))();
+    };
+
+    await new GroqLlmAdapter({ apiKey: 'secret-key', fetchImpl }).assess(INPUT);
+
+    expect(capturedInit.headers.Authorization).toBe('Bearer secret-key');
+    const body = JSON.parse(capturedInit.body);
+    expect(body.response_format).toEqual({ type: 'json_object' });
+    expect(body.temperature).toBe(0);
+  });
+
+  it('throws (does not crash) when Groq returns a non-2xx status', async () => {
+    const adapter = new GroqLlmAdapter({
+      apiKey: 'x',
+      fetchImpl: fakeFetchReturning('rate limited', { ok: false, status: 429 }),
+    });
+    await expect(adapter.assess(INPUT)).rejects.toThrow(/HTTP 429/);
+  });
+
+  it('throws when the response body is not valid JSON', async () => {
+    const adapter = new GroqLlmAdapter({
+      apiKey: 'x',
+      fetchImpl: fakeFetchReturning('```json\n{"tier":"low"}\n```'),
+    });
+    // Groq's JSON mode should prevent markdown fences, but if a model slips
+    // one through anyway, JSON.parse fails inside _complete() — before the
+    // schema-validation boundary in the base class ever runs. Still a plain
+    // Error, and the LlmService treats it exactly like any other provider
+    // failure: log it and try the next provider (services/llm/index.js).
+    await expect(adapter.assess(INPUT)).rejects.toThrow(/not valid JSON/);
+  });
+
+  it('throws on a network failure rather than hanging', async () => {
+    const adapter = new GroqLlmAdapter({
+      apiKey: 'x',
+      fetchImpl: fakeFetchRejecting('getaddrinfo ENOTFOUND api.groq.com'),
+    });
+    await expect(adapter.assess(INPUT)).rejects.toThrow(/Groq request failed/);
+  });
+
+  it('still runs its output through schema validation, not just JSON.parse', async () => {
+    const adapter = new GroqLlmAdapter({
+      apiKey: 'x',
+      fetchImpl: fakeFetchReturning(JSON.stringify({ tier: 'catastrophic' })),
+    });
+    await expect(adapter.assess(INPUT)).rejects.toThrow(InvalidModelOutputError);
+  });
+});
+
+describe('the self-hosted adapter is deliberately NOT implemented', () => {
   it('SelfHostedLlmAdapter throws and names what it needs', async () => {
+    await expect(new SelfHostedLlmAdapter().assess(INPUT)).rejects.toThrow(
+      LlmNotImplementedError,
+    );
     await expect(new SelfHostedLlmAdapter().assess(INPUT)).rejects.toThrow(
       /SELF_HOSTED_LLM_BASE_URL/,
     );
@@ -57,12 +153,17 @@ describe('the adapters are deliberately NOT implemented', () => {
     expect(createLlmService({})).toBeNull();
   });
 
-  it('builds a chain when config is present', () => {
+  it('builds a chain from GROQ_API_KEY and SELF_HOSTED_LLM_BASE_URL', () => {
     const service = createLlmService({
-      LLM_API_KEY: 'x',
+      GROQ_API_KEY: 'x',
       SELF_HOSTED_LLM_BASE_URL: 'http://pod:8000/v1',
     });
-    expect(service.providers.map((p) => p.name)).toEqual(['hosted', 'self-hosted']);
+    expect(service.providers.map((p) => p.name)).toEqual(['groq', 'self-hosted']);
+  });
+
+  it('builds a Groq-only chain when only GROQ_API_KEY is set', () => {
+    const service = createLlmService({ GROQ_API_KEY: 'x' });
+    expect(service.providers.map((p) => p.name)).toEqual(['groq']);
   });
 });
 
@@ -174,8 +275,12 @@ describe('integration with the triage engine', () => {
     expect(result.finalTier).toBe(TIER.MEDIUM);
   });
 
-  it('the real (unimplemented) chain therefore also falls back to MEDIUM', async () => {
-    const service = createLlmService({ LLM_API_KEY: 'placeholder' });
+  it('a real Groq network failure also falls back to MEDIUM, never LOW', async () => {
+    // The genuinely important end-to-end case: even a fully real GroqLlmAdapter
+    // whose network call fails must still leave the engine failing safe.
+    const service = new LlmService([
+      new GroqLlmAdapter({ apiKey: 'x', fetchImpl: fakeFetchRejecting('down') }),
+    ]);
     const result = await runAssessment({ input: INPUT, model: service });
 
     expect(result.finalTier).toBe(TIER.MEDIUM);

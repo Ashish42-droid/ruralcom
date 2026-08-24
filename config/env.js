@@ -34,6 +34,14 @@ const schema = z.object({
   // ---- Secrets ----
   // Optional until Phase 1 (auth) needs it; validated as strong when present.
   APP_SECRET: z.string().min(32).optional(),
+
+  // ---- LLM (assessment layer, D-035) ----
+  // Optional: with neither set, createLlmService() returns null and the
+  // triage engine floors every case at MEDIUM — the safe default.
+  GROQ_API_KEY: z.string().min(10).optional(),
+  GROQ_MODEL_ID: z.string().min(1).optional(),
+  SELF_HOSTED_LLM_BASE_URL: z.string().url().optional(),
+  SELF_HOSTED_LLM_MODEL_ID: z.string().min(1).optional(),
 });
 
 const parsed = schema.safeParse(process.env);

@@ -540,3 +540,62 @@ into `npm run db:check`, turns both failure modes into an actionable message
 instead of a bare DNS error. This cost ten minutes and will save an hour the
 next time it happens — probably on a venue network on demo day, which is
 exactly where IPv6 is least likely to work.
+
+---
+
+## D-035 — Groq wired as the concrete near-term LLM provider
+**Owner instruction**, 2026-08-24: use Groq now (`llama-3.3-70b-versatile`),
+self-hosted DeepSeek R1 after incubation (already tracked as D-030).
+
+**What changed:** the previous `HostedLlmAdapter` stub is replaced by a real
+`GroqLlmAdapter` in `services/llm/adapters.js`. It calls Groq's
+OpenAI-compatible `/v1/chat/completions` endpoint directly via `fetch` — no
+SDK dependency, which keeps the adapter identical in shape to the
+soon-to-be-real `SelfHostedLlmAdapter` and means the eventual DeepSeek
+adapter is close to a copy of this file with a different base URL.
+
+**Stayed in Node, did not introduce Python.** The owner's example was a
+Python ReAct-style tool-calling agent loop. This system does not need tool
+calling — the assessment layer needs one structured JSON call per triage —
+and the repo is Node/Express end to end (D-003). Adding a second language
+runtime for one API call would mean a second dependency tree, a second test
+harness, and a process boundary between it and the triage engine for no
+capability gained. The equivalent logic is `services/llm/adapters.js` +
+`services/llm/prompt.js`, wired into the same `assess()` contract every
+other provider (and the engine itself) already uses.
+
+**Prompt design** (`services/llm/prompt.js`, versioned separately from any
+adapter so every provider is prompted identically):
+- Explicitly tells the model its tier is a **floor candidate only** — the
+  deterministic rules layer can raise it further, and the model is told not
+  to reason around that.
+- Explicitly forbids mentioning any medication, drug name, or dose. The
+  output schema already has no field for one (tested); the prompt exists so
+  the model is never invited to reach for one in its reasoning either — a
+  suppressed field is a weaker guardrail than a model never asked.
+- "When uncertain, choose the higher tier" is stated as the first rule, in
+  those words, because it is the one instruction that matters most if
+  everything else in the prompt is ignored.
+- Uses Groq's `response_format: json_object` (JSON mode), which removes the
+  most common real-world failure — markdown fences, leading commentary —
+  before validation even runs.
+
+**Testing discipline:** `tests/llm.test.js` never calls the real Groq API.
+`fetchImpl` is dependency-injected into `GroqLlmAdapter`, defaulting to the
+global `fetch` in production and to a fake in every test — so CI is free,
+deterministic, and never depends on Groq's uptime or the owner's quota.
+`npm run llm:check` (`scripts/llm-smoke.js`) is the one place allowed to hit
+the real API, run by hand against two constructed cases whenever the prompt
+or key changes.
+
+**Privacy note, worth flagging explicitly:** every assessment request sends
+patient vitals and symptom text to a third-party US inference provider. This
+is inherent to using a hosted LLM at all, not specific to Groq, but it is a
+DPDP-relevant fact the eventual consent flow (`consents` table,
+PHASE1_ARCHITECTURE_PLAN.md §B.2) needs to account for, and it is the kind
+of detail worth being upfront about if asked in the demo.
+
+**Key handling:** the Groq key was shared in this conversation and is now in
+the transcript. Same caution as the Supabase keys and DB password earlier —
+**rotate it** at console.groq.com/keys before anything public-facing, and
+prefer editing `.env` directly over pasting a key in future.

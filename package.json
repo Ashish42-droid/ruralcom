@@ -16,7 +16,8 @@
     "test:coverage": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "lint": "oxlint .",
     "db:check": "node scripts/db-check.js",
-    "db:migrate": "node scripts/migrate.js"
+    "db:migrate": "node scripts/migrate.js",
+    "llm:check": "node --env-file=.env scripts/llm-smoke.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",
