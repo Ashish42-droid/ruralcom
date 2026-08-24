@@ -2,7 +2,7 @@
   "name": "ruralai",
   "version": "0.1.0",
   "private": true,
-  "description": "RuralAI — AI-assisted virtual rural health clinic platform (Core API)",
+  "description": "RuralAI Core API — AI-assisted virtual rural health clinic platform",
   "type": "module",
   "main": "server.js",
   "engines": {
@@ -18,7 +18,8 @@
     "db:check": "node scripts/db-check.js",
     "db:migrate": "node scripts/migrate.js",
     "llm:check": "node --env-file=.env scripts/llm-smoke.js",
-    "livekit:check": "node --env-file=.env scripts/livekit-smoke.js"
+    "livekit:check": "node --env-file=.env scripts/livekit-smoke.js",
+    "assessment:check": "node --env-file=.env scripts/assessment-smoke.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.58.0",

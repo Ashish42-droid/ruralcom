@@ -755,3 +755,87 @@ the `consultations` table exists, this should additionally check that the
 caller is the SPECIFIC doctor/assistant assigned to THIS consultation, not
 merely any clinical-role user who can reach the visit via RLS — tracked
 alongside the scheduling work above, not a gap in what shipped today.
+
+---
+
+## D-040 — Vitals table: a Phase 3 gap found while building Phase 4
+Persisting assessments surfaced a real hole: **there was no `vitals`
+table**. Phase 3's intake pipeline persisted symptoms and attachments but
+never vitals — and the entire deterministic rule layer (NEWS2 thresholds,
+PALS age-banded respiratory rates) is built on them.
+
+The system was not broken, but it was useless in a specific and quiet way:
+with no vitals to read, the engine always saw "no vitals recorded", which
+correctly fires the `no_vitals_recorded` fail-safe and escalates every case
+to MEDIUM. **Safe, and completely uninformative** — exactly the kind of
+failure that looks like it is working.
+
+Added in migration 0010 with per-column plausibility CHECKs mirroring
+`services/iot/DeviceDriver.js` PLAUSIBLE_RANGE, so a manually typed value
+faces the same gate as a device reading: a mistyped SpO2 of 9 is as
+dangerous as a misparsed one. Two constraints worth noting:
+- `vitals_not_empty` — a row recording nothing is a data-entry mistake, not
+  a measurement.
+- `vitals_bp_ordered` — systolic must exceed diastolic. Physiologically
+  impossible otherwise, and almost always means the two were entered the
+  wrong way round.
+
+A partially-filled set is explicitly NORMAL, not an error: a health centre
+may have a thermometer and no oximeter. Absent values stay absent and the
+triage layer treats them as missing data (which escalates), never as normal
+values.
+
+---
+
+## D-041 — The escalation invariant is now enforced by Postgres, not just code
+`ai_assessments` carries two CHECK constraints:
+
+    final_tier >= rule_tier          (assessment_final_at_least_rule)
+    model_tier is null or final_tier >= model_tier
+
+Because `risk_tier` is an ordered enum declared `('low','medium','high')`,
+those two statements together are exactly `final = MAX(rule, model)`.
+
+This matters because it moves the system's single most important safety
+property out of application code and into storage. Even a compromised
+service-role key, a direct `psql` session, or a future bug in
+`services/triage/engine.js` **cannot record a de-escalated tier**. Verified
+against the live database before shipping: an attempted write of
+`rule=high, model=low, final=low` is rejected by name.
+
+Same reasoning for `medication_must_cite_source` on `ai_recommendations`: a
+medication row with a null `rule_source_id` is rejected outright, making an
+unsourced drug recommendation structurally impossible to store rather than
+merely discouraged. Other recommendation types (first_aid, precaution,
+diet) need no source and are unaffected.
+
+**`ai_assessments` has no INSERT policy for `authenticated` at all**, and
+the grant is revoked. Assessments are authored only by the server after
+running the engine — a client able to write its own could fabricate a LOW
+tier for a patient the rules would escalate. Tested for all three clinical
+roles.
+
+---
+
+## D-042 — Assessment persistence, and what happens when half of it fails
+`services/assessment.service.js` gathers input through the CALLER's JWT (so
+RLS decides what can be assembled), runs the engine, then writes through the
+service role — the narrow, audited service-role use the project rule allows.
+
+Two partial-failure paths, handled differently on purpose:
+- **Rule hits fail to write** → the assessment row is deleted. An
+  assessment without the evidence justifying its tier is worse than none:
+  "why did it say HIGH?" must never answer "we don't know".
+- **Visit status update fails** → logged as an error, request still
+  succeeds. The assessment itself is saved and correct; only the status
+  lagged. Failing here would prompt a re-run, costing another real model
+  call for a cosmetic inconsistency.
+
+Verified end to end with `npm run assessment:check` (new): seeds a facility
+and assistant, signs in for real, registers a patient, records vitals and a
+symptom, runs a REAL Groq assessment, reads it back with evidence, confirms
+the visit advanced, and cleans up. On a crushing-chest-pain case it returned
+`ruleTier=high, modelTier=high, finalTier=high`, rule hit `chest_pain`, top
+differential "Acute myocardial infarction", and advanced the visit to
+`referred`. This is the one check that proves the Phase 3 → Phase 4 path
+actually joins up; no unit test can.
