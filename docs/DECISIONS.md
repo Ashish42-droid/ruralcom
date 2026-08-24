@@ -599,3 +599,40 @@ of detail worth being upfront about if asked in the demo.
 the transcript. Same caution as the Supabase keys and DB password earlier —
 **rotate it** at console.groq.com/keys before anything public-facing, and
 prefer editing `.env` directly over pasting a key in future.
+
+---
+
+## D-036 — Groq model corrected to openai/gpt-oss-120b, prompt hardened with a worked example
+`llama-3.3-70b-versatile` (used in D-035 and in the owner's example script) has
+been **withdrawn from Groq's API** and returns `404 model_not_found` for this
+key. `GET /openai/v1/models` against the live key lists what is actually
+available; `openai/gpt-oss-120b` was chosen as the largest model present.
+**Groq's catalogue changes without notice — re-run `npm run llm:check` after
+any model or key change**, since this exact failure mode (a suddenly
+nonexistent model) is easy to miss until an assessment silently fails over
+to MEDIUM.
+
+**gpt-oss-120b returns a separate `message.reasoning` field** (chain of
+thought) alongside `message.content`, the same shape as the DeepSeek R1
+`<think>` block noted in D-030. `GroqLlmAdapter._complete()` reads only
+`.content` and never touches `.reasoning` — worth stating explicitly because
+that field would restate patient details at length and must never be logged
+or persisted.
+
+**The real smoke test caught a real quality problem the mocked test suite
+could not:** against a genuine chest-pain case, Groq returned a
+`differential` array where some entries were bare strings instead of the
+required object shape. Schema validation correctly rejected it — this is
+exactly the boundary in `LlmProvider.assess()` doing its job — and the
+engine failed over to the rule floor, landing HIGH on the chest-pain red
+flag alone with `modelTier: null`. **The safety architecture held under a
+real, unplanned model failure, not a simulated one.**
+
+Fixed by adding one complete worked example to the end of the system prompt
+(`services/llm/prompt.js`) showing the exact object shape for every
+differential entry. Open-weight models follow a concrete example far more
+reliably than an abstract schema description. Re-running `npm run
+llm:check` afterwards: both cases returned valid, schema-passing output, and
+on the chest-pain case the model *itself* named acute myocardial infarction
+at 70% confidence and agreed with the rule floor — model and rules aligned,
+`escalationReason: model_and_rules_agree`.

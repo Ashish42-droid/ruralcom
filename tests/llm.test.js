@@ -66,9 +66,9 @@ describe('GroqLlmAdapter requires configuration', () => {
     expect(() => new GroqLlmAdapter({})).toThrow(TypeError);
   });
 
-  it('defaults to llama-3.3-70b-versatile', () => {
+  it('defaults to a currently-available Groq model', () => {
     const adapter = new GroqLlmAdapter({ apiKey: 'x' });
-    expect(adapter.modelId).toBe('llama-3.3-70b-versatile');
+    expect(adapter.modelId).toBe('openai/gpt-oss-120b');
   });
 });
 

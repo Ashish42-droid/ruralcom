@@ -11,14 +11,25 @@ import { LlmProvider, LlmNotImplementedError } from './LlmProvider.js';
 import { buildMessages, PROMPT_VERSION } from './prompt.js';
 
 const GROQ_CHAT_COMPLETIONS_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const DEFAULT_GROQ_MODEL = 'llama-3.3-70b-versatile';
+const DEFAULT_GROQ_MODEL = 'openai/gpt-oss-120b';
 const DEFAULT_TIMEOUT_MS = 18_000; // under the triage engine's 20s model timeout
 
 /**
  * Groq — hosted inference, OpenAI-compatible chat completions API.
  *
  * NEEDS: `GROQ_API_KEY`. Optionally `GROQ_MODEL_ID`
- * (default "llama-3.3-70b-versatile").
+ * (default "openai/gpt-oss-120b" — the largest model this key has access
+ * to as of 2026-08-24; llama-3.3-70b-versatile has been withdrawn from
+ * Groq's API and returns 404 model_not_found. Verify with
+ * `npm run llm:check` after any model change, since Groq's catalogue
+ * changes without notice).
+ *
+ * NOTE: gpt-oss-120b returns a separate `message.reasoning` field
+ * (chain-of-thought) alongside `message.content`. This adapter reads
+ * ONLY `.content` and never touches `.reasoning` — the reasoning text can
+ * restate patient details at length and must never be logged or
+ * persisted, same caution as the `<think>` block noted for DeepSeek R1
+ * below.
  *
  * `fetchImpl` is injectable so tests never make a real network call — see
  * tests/llm.test.js. Production code never passes it; it defaults to the

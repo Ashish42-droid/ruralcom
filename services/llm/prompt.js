@@ -47,7 +47,29 @@ Respond with ONLY a single JSON object, no markdown fences, no commentary before
   "redFlagsObserved": ["short phrases naming any concerning finding, or an empty array"]
 }
 
-List at most 5 differential entries, most likely first. If nothing concerning was reported, redFlagsObserved is an empty array — do not invent one to seem thorough.`;
+List at most 5 differential entries, most likely first. If nothing concerning was reported, redFlagsObserved is an empty array — do not invent one to seem thorough.
+
+EVERY element of "differential" MUST be an object with all four fields shown above — never a bare string. This is worked example of a complete, correctly-shaped response:
+
+{
+  "tier": "medium",
+  "differential": [
+    {
+      "condition": "Viral upper respiratory infection",
+      "confidence": 0.6,
+      "supportingFindings": ["cough for 3 days", "no breathlessness"],
+      "contradictingFindings": ["mild fever present"]
+    },
+    {
+      "condition": "Early bacterial pneumonia",
+      "confidence": 0.25,
+      "supportingFindings": ["fever", "cough"],
+      "contradictingFindings": ["normal respiratory rate", "SpO2 within normal range"]
+    }
+  ],
+  "reasoning": "Fever with cough and otherwise normal vitals warrants a doctor's review rather than home management, though nothing here is immediately dangerous.",
+  "redFlagsObserved": []
+}`;
 
 /** Formats vitals into a short clinical line, omitting anything not recorded. */
 function describeVitals(vitals = {}) {
