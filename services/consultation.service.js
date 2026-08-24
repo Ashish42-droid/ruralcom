@@ -14,6 +14,7 @@ import { supabaseAdmin, supabaseAsUser } from '../config/supabase.js';
 import { recordAudit } from './audit.service.js';
 import { scheduleToleranceExpiry, cancelToleranceExpiry } from '../jobs/consultationQueue.js';
 import { roomNameForVisit } from './video/livekit.js';
+import { notifyAsync } from './notification.service.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../config/logger.js';
 
@@ -177,7 +178,7 @@ export async function scheduleConsultation({ actor, accessToken, visitId, req })
 }
 
 /** Writes the row, arms the timer, and audits. Shared by schedule and reassign. */
-async function createAndArm({ visit, assessmentId, doctorId, actor, req, reassignedFrom = null, reassignCount = 0 }) {
+async function createAndArm({ visit, assessmentId, doctorId, actor, req, reassignedFrom = null, reassignCount = 0, assistantId = null }) {
   const scheduledAt = new Date();
   const toleranceExpiresAt = new Date(scheduledAt.getTime() + TOLERANCE_MINUTES * 60_000);
 
@@ -188,7 +189,10 @@ async function createAndArm({ visit, assessmentId, doctorId, actor, req, reassig
       patient_id: visit.patient_id,
       assessment_id: assessmentId,
       doctor_id: doctorId,
-      assistant_id: actor?.id ?? null,
+      // On reassignment there is no acting user, so the original
+      // assistant is carried through explicitly — otherwise the person
+      // waiting with the patient would stop receiving updates.
+      assistant_id: actor?.id ?? assistantId,
       status: 'ringing',
       scheduled_at: scheduledAt.toISOString(),
       tolerance_expires_at: toleranceExpiresAt.toISOString(),
@@ -216,6 +220,25 @@ async function createAndArm({ visit, assessmentId, doctorId, actor, req, reassig
     consultationId: data.id,
     delayMs: TOLERANCE_MINUTES * 60_000,
   });
+
+  // Both parties, not just the doctor: the assistant is standing with the
+  // patient and needs to see that a doctor was found and is being rung.
+  notifyAsync({
+    recipientId: doctorId,
+    type: 'consultation_ringing',
+    payload: { toleranceExpiresAt: data.tolerance_expires_at, reassignCount },
+    visitId: visit.id,
+    consultationId: data.id,
+  });
+  if (data.assistant_id) {
+    notifyAsync({
+      recipientId: data.assistant_id,
+      type: 'consultation_scheduled',
+      payload: { doctorId, toleranceExpiresAt: data.tolerance_expires_at },
+      visitId: visit.id,
+      consultationId: data.id,
+    });
+  }
 
   await recordAudit({
     action: 'consultation_scheduled',
@@ -264,6 +287,16 @@ export async function joinConsultation({ actor, consultationId, req }) {
   if (updateError) throw ApiError.badRequest(updateError.message);
 
   await cancelToleranceExpiry(consultationId);
+
+  if (consultation.assistant_id) {
+    notifyAsync({
+      recipientId: consultation.assistant_id,
+      type: 'consultation_joined',
+      payload: { doctorId: actor.id },
+      visitId: consultation.visit_id,
+      consultationId,
+    });
+  }
 
   await recordAudit({
     action: 'consultation_joined',
@@ -350,6 +383,16 @@ export async function handleToleranceExpiry(consultationId) {
     severity: 'warning',
   });
 
+  if (consultation.assistant_id) {
+    notifyAsync({
+      recipientId: consultation.assistant_id,
+      type: 'consultation_missed',
+      payload: { doctorId: consultation.doctor_id, reassignCount: consultation.reassign_count },
+      visitId: consultation.visit_id,
+      consultationId,
+    });
+  }
+
   if (consultation.reassign_count >= MAX_REASSIGNMENTS) {
     logger.error(
       { consultationId, visitId: consultation.visit_id },
@@ -397,6 +440,7 @@ export async function handleToleranceExpiry(consultationId) {
     assessmentId: consultation.assessment_id,
     doctorId: nextDoctorId,
     actor: null,
+    assistantId: consultation.assistant_id,
     reassignedFrom: consultationId,
     reassignCount: consultation.reassign_count + 1,
   });
@@ -405,6 +449,16 @@ export async function handleToleranceExpiry(consultationId) {
     .from('consultations')
     .update({ status: 'reassigned' })
     .eq('id', consultationId);
+
+  if (consultation.assistant_id) {
+    notifyAsync({
+      recipientId: consultation.assistant_id,
+      type: 'consultation_reassigned',
+      payload: { newDoctorId: nextDoctorId, attempt: consultation.reassign_count + 1 },
+      visitId: consultation.visit_id,
+      consultationId: replacement.id,
+    });
+  }
 
   await recordAudit({
     action: 'consultation_reassigned',

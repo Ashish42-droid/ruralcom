@@ -12,6 +12,7 @@
  */
 import { supabaseAsUser, supabaseAdmin } from '../config/supabase.js';
 import { recordAudit } from './audit.service.js';
+import { notifyAsync } from './notification.service.js';
 import ApiError from '../utils/ApiError.js';
 
 function toApi(row) {
@@ -134,6 +135,25 @@ export async function submitReview({ actor, accessToken, assessmentId, payload, 
       ...(nextStatus === 'closed' ? { closed_at: new Date().toISOString() } : {}),
     })
     .eq('id', assessment.visit_id);
+
+  // Notify the assistant who opened the visit. A flag-back that nobody
+  // sees is the same as no flag at all.
+  const { data: visitRow } = await supabaseAdmin
+    .from('visits')
+    .select('assistant_id')
+    .eq('id', assessment.visit_id)
+    .maybeSingle();
+
+  if (visitRow?.assistant_id) {
+    notifyAsync({
+      recipientId: visitRow.assistant_id,
+      type: payload.action === 'flag_to_assistant' ? 'review_flagged_to_assistant' : 'review_approved',
+      // The note itself is clinical content and stays out of the payload;
+      // the client fetches the review through the RLS-protected endpoint.
+      payload: { reviewId: data.id, action: payload.action },
+      visitId: assessment.visit_id,
+    });
+  }
 
   await recordAudit({
     action: payload.action === 'flag_to_assistant' ? 'review_flagged_to_assistant' : 'doctor_review',

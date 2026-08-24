@@ -928,3 +928,81 @@ Reassignment excludes every doctor who already missed the same chain and
 gives up after `MAX_REASSIGNMENTS` (3) rather than looping forever.
 Doctor selection is least-loaded-first with a random tie-break, so an
 all-idle pool does not funnel every case to the same doctor.
+
+---
+
+## D-046 — Realtime: durable row first, socket push second
+`services/notification.service.js` writes the `notifications` row BEFORE
+emitting the socket event, deliberately. A crash between the two loses the
+push (recoverable — the client reconciles from the table on reconnect) and
+not the record (not recoverable at all).
+
+This matters more here than in a typical app: a socket event reaches only a
+client connected at that instant, and the target users are a doctor on a
+phone and an assistant on a tablet, both on rural connectivity. Without the
+durable row, a thirty-second drop means a consultation nobody ever learns
+was scheduled.
+
+`notify()` never throws into its caller. A notification is a side effect of
+a clinical action; failing the action because a socket was unavailable
+would be strictly worse than a late notification.
+
+---
+
+## D-047 — No PHI in notification payloads, enforced not just documented
+Notification payloads travel over websockets and may be cached client-side,
+so they carry **ids and enum values only** — never a patient name, symptom
+text, model reasoning, clinical note, health ID, phone or village. The
+client learns *that* something happened and fetches the record itself
+through the normal RLS-protected endpoints.
+
+`assertNoPhi()` checks payload keys against a forbidden list and **throws in
+development and test**, so the mistake is caught while the code is being
+written; in production it logs an error instead of dropping a notification
+a clinician is waiting on. `tests/notification-payload.test.js` pins the
+rule so a future "just include the patient name, it's convenient" change
+fails loudly.
+
+Notifications are also strictly per-person at the database: the RLS policy
+is `recipient_id = auth.uid()`, not facility or district scope. A colleague
+at the same facility sees none of them. There is no INSERT policy for
+`authenticated` at all — a client able to author one could forge a
+"consultation scheduled" that no scheduler ever created — and the only
+updatable column is `read_at`.
+
+---
+
+## D-048 — Socket rooms are joined from the verified profile, never from the client
+Socket.IO authenticates every connection at the handshake against Supabase
+(same path as the HTTP middleware, including the deactivated-account
+check), then joins rooms derived from the resolved profile. **A client never
+names a room**, so it cannot subscribe to another user's stream by guessing
+one. `visit:subscribe` is the one client-initiated join, and it is
+authorised server-side against the same facility/district scope RLS uses.
+
+Verified against a real server with real tokens over a real socket
+(`tests/socket-auth.test.js`): a missing token, a garbage token, and a
+structurally-valid-but-unsigned JWT are all rejected at the handshake; an
+event emitted for user A reaches A and provably does not reach user B.
+
+---
+
+## D-049 — A shutdown leak the socket tests surfaced
+The socket suite hung rather than failing, which is its own kind of signal.
+The tests passed in 28s under `--forceExit` — so the hang was Jest unable to
+exit, not a test failure.
+
+Cause: `closeSockets()` called `io.close()` but never closed the Redis
+**adapter** connections. `io.close()` does not own them, so two ioredis
+clients stayed open and kept the event loop alive.
+
+In production this would not have lost data, but every graceful shutdown
+would have hit the 15-second force-exit timer in `server.js` and logged
+"Graceful shutdown timed out; forcing exit" on every single deploy — noise
+that trains you to ignore a message that should mean something. Fixed by
+holding the adapter clients and quitting them in `closeSockets()`; the
+suite now exits cleanly with no `--forceExit`.
+
+Shutdown order in `server.js` is now sockets → queue → pool: stop accepting
+new realtime work, let an in-flight tolerance expiry finish, then drop the
+database connection it needed.

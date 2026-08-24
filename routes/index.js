@@ -15,6 +15,7 @@ import intakeRoutes from './intake.routes.js';
 import videoRoutes from './video.routes.js';
 import assessmentRoutes from './assessment.routes.js';
 import consultationRoutes from './consultation.routes.js';
+import notificationRoutes from './notification.routes.js';
 
 const router = Router();
 
@@ -25,10 +26,10 @@ router.use('/patients', patientRoutes);
 router.use('/intake', intakeRoutes);
 router.use('/clinical', assessmentRoutes);
 router.use('/consultations', consultationRoutes);
+router.use('/notifications', notificationRoutes);
 router.use('/video', videoRoutes);
 
 // Mounted in later phases:
-// router.use('/notifications', notificationRoutes);// Phase 5
 // router.use('/iot', iotRoutes);                   // Phase 6
 
 export default router;

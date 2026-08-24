@@ -15,6 +15,7 @@ import { closePool, pingDatabase } from './config/db.js';
 import { pingSupabase } from './config/supabase.js';
 import { pingRedis, isRedisConfigured } from './config/redis.js';
 import { startToleranceWorker, closeConsultationQueue } from './jobs/consultationQueue.js';
+import { initSockets, closeSockets } from './sockets/index.js';
 import { handleToleranceExpiry } from './services/consultation.service.js';
 
 const server = http.createServer(app);
@@ -63,6 +64,7 @@ server.listen(env.PORT, async () => {
   // Injected rather than imported inside the queue module, so jobs/ does
   // not take a circular dependency on services/consultation.service.js.
   startToleranceWorker(handleToleranceExpiry);
+  await initSockets(server);
 });
 
 let shuttingDown = false;
@@ -81,8 +83,17 @@ async function shutdown(signal) {
   server.close(async (err) => {
     if (err) logger.error({ err }, 'Error closing HTTP server');
     try {
-      // Close the queue first so an in-flight tolerance expiry can finish
-      // before the database connection it needs disappears.
+      // Sockets first: stop accepting new realtime work before tearing
+      // down the queue and pool it depends on.
+      await closeSockets();
+      logger.info('Socket.IO closed');
+    } catch (socketErr) {
+      logger.error({ err: socketErr }, 'Error closing Socket.IO');
+    }
+
+    try {
+      // Then the queue, so an in-flight tolerance expiry can finish before
+      // the database connection it needs disappears.
       await closeConsultationQueue();
       logger.info('Consultation queue closed');
     } catch (queueErr) {
