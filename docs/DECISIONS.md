@@ -636,3 +636,62 @@ llm:check` afterwards: both cases returned valid, schema-passing output, and
 on the chest-pain case the model *itself* named acute myocardial infarction
 at 70% confidence and agreed with the rule floor — model and rules aligned,
 `escalationReason: model_and_rules_agree`.
+
+---
+
+## D-037 — Pooler connected; test pool size fixed to match
+**Owner supplied the real Supavisor session-pooler string** (region
+`ap-southeast-2`, not the `ap-south-1` guessed earlier — five regions were
+tried blind in D-034 and all failed; the real one had to come from the
+dashboard, as expected). `DATABASE_POOLER_URL` is now set and `config/db.js`
+already preferred it once set, so D-010/D-034's IPv6 fragility is resolved:
+the app and tests now connect over IPv4 regardless of the machine's IPv6
+route, which matters most on a venue network on demo day.
+
+**This immediately surfaced a second, different problem.** The full test
+suite passed 290/290 serially but failed intermittently (14–71 tests) in
+Jest's normal parallel mode — and only after switching to the pooler. Cause:
+`config/db.js` set `max: 10` unconditionally, and `jest.config.js` already
+capped `maxWorkers: 2`, so worst case was 2 × 10 = 20 concurrent
+connections. The **direct** host tolerated that fine; Supavisor's **session
+pooler** caps total connections far more tightly, so parallel test runs
+exhausted it while serial runs and direct-connection runs never had.
+
+Fixed by making the pool size test-aware: `max: env.isTest ? 3 : 10`, giving
+a worst case of 2 × 3 = 6 concurrent test connections — comfortably under
+the pooler's cap — while production keeps the generous `max: 10` the direct
+host always supported. Verified: 290/290 passing in Jest's normal parallel
+mode, not just `--runInBand`.
+
+**Also discovered while investigating:** `tests/live-auth-path.test.js` is
+now genuinely green (9/9) — the access-token-hook canary from D-033 is
+passing for real, meaning the hook has been enabled since it was last
+checked. Confirmed by running that suite in isolation, not inferred from the
+full-suite count. RLS via a real login now works end to end.
+
+---
+
+## D-038 — Two of the four values supplied were not usable as given
+Alongside the pooler string, the owner supplied a `GROQ_BASE_URL` and a
+LiveKit secret. Neither could be wired in as sent, and per the
+ask-don't-assume rule, flagged rather than guessed around:
+
+1. **`GROQ_BASE_URL=https://<id>.us-west-1-0.aws.cloud.qdrant.io`** — this is
+   a **Qdrant Cloud vector-database cluster URL**, not a Groq API endpoint.
+   Groq's chat-completions endpoint
+   (`https://api.groq.com/openai/v1/chat/completions`, already hardcoded as
+   `GROQ_CHAT_COMPLETIONS_URL` in `services/llm/adapters.js`) has no
+   relationship to Qdrant. **Not applied.** If a vector store is intended
+   for something else in the project (e.g. retrieval for the differential
+   layer, per PHASE1_ARCHITECTURE_PLAN.md §D.1's RAG discussion), that is a
+   separate, real integration — say so explicitly and it can be planned
+   properly, rather than silently repurposing an unrelated URL as an LLM
+   base-URL override.
+2. **`LIVEKIT_API_SECRET=••••••••••••••••••••••••••••••••`** — this is a
+   **masked display value** from the LiveKit dashboard, not the actual
+   secret; dashboards render secrets as bullets after creation specifically
+   so they cannot be read back. `LIVEKIT_URL` and `LIVEKIT_API_KEY` are real
+   and are now in `.env`; the secret is commented out pending the real
+   value. LiveKit API secrets are typically shown only once, at key
+   creation — if it cannot be revealed again in the dashboard, generate a
+   new key pair rather than guessing.

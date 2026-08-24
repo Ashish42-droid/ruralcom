@@ -20,10 +20,15 @@ const ssl = { rejectUnauthorized: false };
 export const pool = new Pool({
   connectionString: env.DATABASE_POOLER_URL || env.DATABASE_URL,
   ssl,
-  // Tests hold long-lived transactions (RLS policy tests) and occasionally
-  // nest a second connection, so a tight cap starves them into timeouts
-  // against a remote database. There is no reason to constrain it.
-  max: 10,
+  // In test, Jest runs multiple worker PROCESSES in parallel, each importing
+  // this module fresh and opening its own Pool. Worker count × max here is
+  // the real concurrent-connection ceiling against Supavisor's session
+  // pooler, which caps total connections tightly (D-037). A generous max
+  // per worker (this used to be 10 unconditionally) multiplies across
+  // workers and can exhaust the pooler well before any single test does
+  // anything wrong — see jest.config.js maxWorkers, which bounds the other
+  // side of that multiplication.
+  max: env.isTest ? 3 : 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 15_000,
   application_name: 'ruralai-core-api',
