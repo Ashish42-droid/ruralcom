@@ -33,6 +33,41 @@ pool.on('error', (err) => {
   logger.error({ err }, 'Unexpected error on idle Postgres client');
 });
 
+/**
+ * Turns the two confusing Postgres connection failures into actionable ones.
+ *
+ * `ENOTFOUND` on the direct host is almost never a typo — the direct host
+ * `db.<ref>.supabase.co` has ONLY an AAAA record, so the moment the machine
+ * loses its IPv6 route the OS resolver returns nothing and Node reports the
+ * host as non-existent. `nslookup` still succeeds, which makes it look like
+ * a code bug for far longer than it should.
+ */
+export function explainConnectionError(err) {
+  const usingPooler = Boolean(env.DATABASE_POOLER_URL);
+
+  if (err?.code === 'ENOTFOUND' && !usingPooler) {
+    return (
+      'Could not resolve the direct Postgres host. That host is IPv6-only, ' +
+      'so this fails whenever IPv6 is unavailable on this network — even ' +
+      'though nslookup still resolves it. Fix: set DATABASE_POOLER_URL to ' +
+      'the IPv4 Supavisor pooler string from the Supabase dashboard ' +
+      '(Settings -> Database -> Connection string -> Session pooler). ' +
+      'See docs/DECISIONS.md D-010.'
+    );
+  }
+
+  if (err?.message?.includes('Tenant or user not found')) {
+    return (
+      'The pooler rejected the credentials. The pooler username must be ' +
+      '"postgres.<project-ref>", not "postgres", and the region in the ' +
+      'hostname must match the project. Copy the exact string from the ' +
+      'dashboard rather than constructing it.'
+    );
+  }
+
+  return null;
+}
+
 /** Run a query. Returns the pg result. */
 export function query(text, params) {
   return pool.query(text, params);

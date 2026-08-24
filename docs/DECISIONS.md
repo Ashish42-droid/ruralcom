@@ -409,3 +409,134 @@ passed for the wrong reason. Caught by the `exact: true` assertions.
 normal vitals (the cases a vitals-only system misses), IMCI danger signs,
 neonates, and missing-data fail-safes. Under-triage fails the build;
 over-triage is permitted except where `exact: true`.
+
+---
+
+## D-030 — LLM: hosted now, self-hosted DeepSeek R1 after incubation
+**Owner decision.** Near term: a hosted provider (account being provisioned
+by the owner; provider not yet named). Long term: **DeepSeek R1 self-hosted
+on a GPU pod post-incubation.**
+
+**Why the adapter is written against the OpenAI wire format rather than a
+DeepSeek-specific one:** vLLM and SGLang — the two realistic ways to serve
+R1 — both expose an OpenAI-compatible `/v1/chat/completions` endpoint. One
+adapter therefore serves *any* self-hosted open-weight model, so replacing
+R1 with something newer becomes a config change instead of a rewrite.
+
+**Note for whoever implements it:** R1 is a reasoning model and emits a
+`<think>` block before its answer. That block must be stripped before JSON
+parsing, and it must never be persisted or logged — it restates patient
+details at length, so it is PHI.
+
+**Output validation lives in the base class, not the adapters.** An adapter
+implements `_complete()` and returns raw parsed JSON; `assess()` validates it
+against a Zod schema. An adapter therefore cannot skip validation even by
+accident. The schema has **no field for medication** — there is deliberately
+nowhere for a model to put a drug name, dose or frequency, and a test asserts
+that.
+
+Unlike the STT chain, schema-invalid output is **not retried against the same
+provider**. Retrying malformed clinical output is more likely to burn twenty
+seconds than to fix anything, and the engine's fail-safe to MEDIUM is a
+perfectly safe outcome. A health worker is standing in front of a patient.
+
+---
+
+## D-031 — Video: LiveKit, not 100ms
+**Owner decision** — 100ms asked for payment. LiveKit is the better fit
+anyway: open source (Apache 2.0), self-hostable, and consistent with the
+DeepSeek self-hosting direction in D-030, so the same "free tier now,
+self-host after incubation" path applies to both.
+
+Trade-off versus the original 100ms recommendation: 100ms has India-region
+infrastructure out of the box, which was its main draw for latency and for a
+data-residency answer. With LiveKit Cloud the region depends on the project
+setting; self-hosted LiveKit on an Indian VPS gives full control but means
+owning TURN capacity — which is precisely what fails on a hostile venue
+network. **For the demo, use LiveKit Cloud rather than self-hosting**, and
+revisit after incubation.
+
+Unchanged from the original plan: notification delivery stays completely
+decoupled from the video provider. Scheduling, the 5-minute tolerance window,
+ringing and reassignment are ours; the provider only supplies a room.
+Swapping providers should touch no scheduling logic.
+
+---
+
+## D-032 — IoT: ports and drivers built, hardware pending
+**Owner decision** — build the abstraction and drivers now, hardware to be
+purchased later.
+
+Delivered, and it is real code rather than a mock:
+- `services/iot/ieee11073.js` — SFLOAT and FLOAT decoders. BLE health
+  profiles do not use IEEE-754, and both formats reserve specific mantissas
+  for NaN/infinity/not-at-this-resolution. Those are surfaced as `null`, not
+  decoded: **NaN (0x07FF) read as a number becomes 2047, a plausible-looking
+  pulse rate.** That is the classic bug in this layer.
+- `drivers/blePulseOximeter.js` — SIG standard PLX service (0x1822).
+- `drivers/bleThermometer.js` — SIG standard Health Thermometer (0x1809),
+  with Fahrenheit→Celsius conversion. Unconverted, 98.6 would read as a
+  fever that isn't there.
+- `drivers/simulated.js` — emits spec-compliant payloads so it drives the
+  REAL parsers, and marks every observation `SIMULATED` all the way into the
+  database.
+- `registry.js` — routing by GATT UUID or capability, plus the repeatable
+  add-a-device procedure.
+
+Observations are FHIR-shaped with LOINC codes. That costs nothing now and
+makes ABDM/FHIR interoperability a mapping exercise later.
+
+**Two things that need real hardware:**
+1. **Many cheap consumer oximeters are not SIG-compliant** — they expose
+   proprietary characteristics. Those need a per-model driver, which is
+   exactly what the abstraction is for. Send the make/model and an nRF
+   Connect characteristic dump and it is a short file.
+2. **Captured raw payloads.** CI has no physical device, so a saved byte
+   buffer from the real hardware is the only regression protection a driver
+   will ever get. Capture some on day one.
+
+**Readings the device itself distrusts are rejected, not stored.** A PLX
+payload flagging poor perfusion or inadequate signal produces no
+observation — a spurious SpO2 of 99% would *mask* hypoxia, which is worse
+than having no reading.
+
+---
+
+## D-033 — Deferred by owner
+- **Access token hook / signup disable / key rotation** — owner will do
+  later. `tests/live-auth-path.test.js` stays red until then; it is a
+  configuration canary, not a code defect.
+- **Clinician sign-off on triage thresholds and the golden case suite**
+  (D-027) — skipped for now at owner's direction. The ruleset stays stamped
+  `unvalidated` and the README keeps its "not for clinical use" notice.
+  Flagging once more that this is the longest-lead-time item in the project
+  and the only one that cannot be bought with an API key.
+
+---
+
+## D-034 — The IPv6-only DB host bit us, as D-010 predicted
+**Symptom:** 71 tests failed across the four DB-backed suites with
+`getaddrinfo ENOTFOUND db.<ref>.supabase.co`, while `nslookup` resolved the
+host fine and the REST API returned 200. It looked exactly like a code
+regression introduced alongside the LLM and IoT work. It was not — the
+non-DB suites (211 tests) all passed, and the DB suites failed identically
+when run serially.
+
+**Cause:** the direct Postgres host has **only an AAAA record**. When the
+machine's IPv6 route drops, the OS resolver returns no usable address and
+Node reports the host as non-existent. `nslookup` queries DNS directly and
+still succeeds, which is what makes this so misleading.
+
+**Fix:** `DATABASE_POOLER_URL` — the IPv4 Supavisor pooler. `config/db.js`
+already prefers it when set.
+
+**Why it is not set yet:** the pooler hostname cannot be derived. Trying
+`aws-0-*` and `aws-1-*` across five regions returned "Tenant or user not
+found" every time, so the region and hostname have to come from the
+dashboard. Requested from the owner.
+
+**Mitigation shipped:** `explainConnectionError()` in `config/db.js`, wired
+into `npm run db:check`, turns both failure modes into an actionable message
+instead of a bare DNS error. This cost ten minutes and will save an hour the
+next time it happens — probably on a venue network on demo day, which is
+exactly where IPv6 is least likely to work.

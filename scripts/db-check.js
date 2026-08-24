@@ -4,7 +4,7 @@
  * Verifies Postgres and Supabase Auth from the command line, so a broken
  * environment is diagnosed in seconds rather than by reading server logs.
  */
-import { pingDatabase, closePool } from '../config/db.js';
+import { pingDatabase, closePool, explainConnectionError } from '../config/db.js';
 import { pingSupabase } from '../config/supabase.js';
 import env from '../config/env.js';
 
@@ -14,7 +14,9 @@ try {
   const db = await pingDatabase();
   results.push(['Postgres', true, `${db.version} (${db.latencyMs}ms)`]);
 } catch (err) {
+  const hint = explainConnectionError(err);
   results.push(['Postgres', false, err.message]);
+  if (hint) results.push(['  hint', false, hint]);
 }
 
 try {
