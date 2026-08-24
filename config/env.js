@@ -42,6 +42,13 @@ const schema = z.object({
   GROQ_MODEL_ID: z.string().min(1).optional(),
   SELF_HOSTED_LLM_BASE_URL: z.string().url().optional(),
   SELF_HOSTED_LLM_MODEL_ID: z.string().min(1).optional(),
+
+  // ---- Video (D-039) ----
+  // All three optional together: without them, video routes return 503
+  // LIVEKIT_NOT_CONFIGURED rather than crashing the server at boot.
+  LIVEKIT_URL: z.string().url().optional(),
+  LIVEKIT_API_KEY: z.string().min(1).optional(),
+  LIVEKIT_API_SECRET: z.string().min(1).optional(),
 });
 
 const parsed = schema.safeParse(process.env);

@@ -695,3 +695,63 @@ ask-don't-assume rule, flagged rather than guessed around:
    value. LiveKit API secrets are typically shown only once, at key
    creation — if it cannot be revealed again in the dashboard, generate a
    new key pair rather than guessing.
+
+---
+
+## D-039 — LiveKit wired: token generation is live, full scheduling is not
+**Owner supplied real, working LiveKit credentials** (a second, regenerated
+key pair — the first API key sent earlier carried a masked secret and
+could not be used, see D-038). Verified end to end with `npm run
+livekit:check`: authenticate, create a room, mint a join token, delete the
+room, all against the real LiveKit Cloud project.
+
+**What "wire up LiveKit" means concretely, and what is built now**
+(`services/video/livekit.js`):
+- `createJoinToken()` — mints a signed access token scoped to one visit's
+  room, with role-shaped permissions (clinical roles can publish and
+  subscribe; anything else is subscribe-only, though no caller reaches
+  that branch yet).
+- `ensureRoom()` / `closeRoom()` — idempotent room lifecycle via
+  `RoomServiceClient`.
+- `roomNameForVisit()` — deterministic `visit-<id>` naming, so two
+  participants calling independently land in the same room without any
+  coordination step.
+- `POST /api/v1/video/visits/:visitId/token` and `/close` — gated by the
+  same RLS-backed visit-reachability check every other visit-scoped
+  endpoint already uses (`supabaseAsUser`, not the service role): if RLS
+  will not return the visit for this caller, no token is minted.
+
+**Why token generation needed no network mocking in tests, unlike Groq:** a
+LiveKit access token is a self-contained signed JWT — minted entirely with
+the local API secret, verified in `tests/livekit.test.js` by independently
+decoding it with `jsonwebtoken` and asserting the room/grant/identity
+claims. LiveKit's servers see it only when a client later uses it to
+connect. This is genuinely offline-testable code, not code that merely
+happens to be mocked. `RoomServiceClient` calls (create/list/delete a real
+room) are the one part that does hit the network, and those are exercised
+for real by `npm run livekit:check` — same split as the Groq smoke test.
+
+**What is deliberately NOT built yet**, because it needs foundations that
+don't exist:
+- The `consultations` table and its RLS policies.
+- Scheduling: doctor selection by disease category, load balancing across
+  available doctors.
+- The 5-minute tolerance window and auto-reassignment on a missed call —
+  needs a delayed job, i.e. BullMQ + Redis (`REDIS_URL` not configured).
+- Realtime notifications to both parties on scheduling/ringing/joining —
+  needs `sockets/`, not built yet.
+- The "one active call per doctor" constraint.
+
+Building those now, without a `consultations` schema or a job queue in
+place, would mean redoing them shortly after rather than building once.
+`services/video/livekit.js` is the piece with no such dependency, so it
+ships now; the rest is real remaining Phase 5 scope, not an oversight.
+
+**A production detail worth flagging for later:** `createJoinToken()`
+currently trusts `req.user.role` from the authenticated session to decide
+publish rights, which is correct today because only clinical roles can
+reach the route at all (`requireRole` in `routes/video.routes.js`). Once
+the `consultations` table exists, this should additionally check that the
+caller is the SPECIFIC doctor/assistant assigned to THIS consultation, not
+merely any clinical-role user who can reach the visit via RLS — tracked
+alongside the scheduling work above, not a gap in what shipped today.

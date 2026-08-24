@@ -12,6 +12,7 @@ import authRoutes from './auth.routes.js';
 import adminRoutes from './admin.routes.js';
 import patientRoutes from './patient.routes.js';
 import intakeRoutes from './intake.routes.js';
+import videoRoutes from './video.routes.js';
 
 const router = Router();
 
@@ -20,11 +21,12 @@ router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
 router.use('/patients', patientRoutes);
 router.use('/intake', intakeRoutes);
+router.use('/video', videoRoutes);
 
 // Mounted in later phases:
-// router.use('/intake', intakeRoutes);             // Phase 3
 // router.use('/assessments', assessmentRoutes);    // Phase 4
-// router.use('/consultations', consultationRoutes);// Phase 5
+// router.use('/consultations', consultationRoutes);// Phase 5 — scheduling,
+//   the 5-minute tolerance window, doctor load balancing (D-039)
 // router.use('/notifications', notificationRoutes);// Phase 5
 // router.use('/iot', iotRoutes);                   // Phase 6
 
