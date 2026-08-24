@@ -13,6 +13,9 @@ import env from './config/env.js';
 import logger from './config/logger.js';
 import { closePool, pingDatabase } from './config/db.js';
 import { pingSupabase } from './config/supabase.js';
+import { pingRedis, isRedisConfigured } from './config/redis.js';
+import { startToleranceWorker, closeConsultationQueue } from './jobs/consultationQueue.js';
+import { handleToleranceExpiry } from './services/consultation.service.js';
 
 const server = http.createServer(app);
 
@@ -32,6 +35,19 @@ async function verifyDependencies() {
     logger.error({ err: sb.reason }, 'Supabase Auth unreachable at boot');
   }
 
+  if (isRedisConfigured) {
+    try {
+      const redis = await pingRedis();
+      logger.info({ ...redis }, 'Redis reachable');
+    } catch (err) {
+      logger.error({ err }, 'Redis unreachable at boot');
+    }
+  } else {
+    // Not fatal, but a real loss of safety: missed consultations will not
+    // be reassigned automatically.
+    logger.warn('REDIS_URL is not configured — consultation tolerance windows are DISABLED');
+  }
+
   // Deliberately non-fatal. A transient dependency blip should not stop the
   // process from starting and serving /health/live — the readiness probe
   // keeps it out of the load balancer until it recovers.
@@ -43,6 +59,10 @@ server.listen(env.PORT, async () => {
     `RuralAI Core API listening on ${env.API_BASE_URL}`,
   );
   await verifyDependencies();
+
+  // Injected rather than imported inside the queue module, so jobs/ does
+  // not take a circular dependency on services/consultation.service.js.
+  startToleranceWorker(handleToleranceExpiry);
 });
 
 let shuttingDown = false;
@@ -60,6 +80,15 @@ async function shutdown(signal) {
 
   server.close(async (err) => {
     if (err) logger.error({ err }, 'Error closing HTTP server');
+    try {
+      // Close the queue first so an in-flight tolerance expiry can finish
+      // before the database connection it needs disappears.
+      await closeConsultationQueue();
+      logger.info('Consultation queue closed');
+    } catch (queueErr) {
+      logger.error({ err: queueErr }, 'Error closing consultation queue');
+    }
+
     try {
       await closePool();
       logger.info('Postgres pool closed');

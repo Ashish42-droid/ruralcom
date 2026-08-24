@@ -12,6 +12,7 @@
  */
 import { pingDatabase } from '../config/db.js';
 import { pingSupabase } from '../config/supabase.js';
+import { pingRedis, isRedisConfigured } from '../config/redis.js';
 import { ok } from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import env from '../config/env.js';
@@ -52,10 +53,19 @@ export const summary = asyncHandler(async (req, res) => {
 });
 
 async function runChecks() {
-  const [database, supabase] = await Promise.allSettled([pingDatabase(), pingSupabase()]);
+  const [database, supabase, redis] = await Promise.allSettled([
+    pingDatabase(),
+    pingSupabase(),
+    // Reported but NOT part of readiness: without Redis the API still
+    // serves every clinical route, it just cannot auto-reassign a missed
+    // consultation. Failing readiness would pull a working instance out of
+    // the load balancer over a degraded background feature.
+    isRedisConfigured ? pingRedis() : Promise.resolve({ ok: true, skipped: 'not configured' }),
+  ]);
   return {
     database: settledToCheck(database),
     supabaseAuth: settledToCheck(supabase),
+    redis: settledToCheck(redis),
   };
 }
 

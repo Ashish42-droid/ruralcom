@@ -839,3 +839,92 @@ the visit advanced, and cleans up. On a crushing-chest-pain case it returned
 differential "Acute myocardial infarction", and advanced the visit to
 `referred`. This is the one check that proves the Phase 3 → Phase 4 path
 actually joins up; no unit test can.
+
+---
+
+## D-043 — Redis wired; the tolerance window is a job, not a timer
+Owner supplied Upstash credentials, so the 5-minute tolerance window and
+the doctor review loop are now built (migration 0011).
+
+**The URL scheme needed correcting.** Upstash's dashboard shows
+`redis-cli --tls -u redis://...` — TLS as a separate flag. ioredis and
+BullMQ negotiate TLS from the *scheme*, so the stored URL must be
+`rediss://`. With plain `redis://` the connection fails in a way that looks
+like a network fault rather than a config error, so `config/env.js` now
+rejects a `redis://` URL pointing at upstash.io outright.
+
+**Why a job queue rather than `setTimeout`:** the API runs multiple
+instances behind a load balancer. A `setTimeout` lives in one process's
+memory and dies with a deploy, a crash, or a scale-down — silently, taking
+the patient's escalation with it. A delayed BullMQ job survives all three
+and fires on whichever instance is alive. Verified on Upstash before
+building on it: delayed jobs fire at 3179ms against a 3000ms target, and
+blocking commands (which BullMQ needs) are permitted.
+
+**Degraded mode is explicit.** Without `REDIS_URL` the API still serves
+every clinical route and calls still connect — only automatic
+miss-and-reassign is unavailable. That is a real loss of safety, so it is
+logged loudly at boot and on every schedule attempt rather than passed over
+in silence. Redis is reported by `/health` but deliberately NOT part of
+readiness: failing readiness would pull a working instance out of the load
+balancer over a degraded background feature.
+
+---
+
+## D-044 — Spec rules encoded as database constraints, not intentions
+Three rules from the original brief now hold at the storage layer:
+
+- **"One active call per doctor at a time"** → a partial unique index on
+  `consultations(doctor_id) where status in ('ringing','active')`.
+  Application checks and UI state both race under concurrent scheduling;
+  a unique index cannot. When it fires, `scheduleConsultation` translates
+  the 23505 into a `DOCTOR_BECAME_BUSY` conflict — a real race between
+  doctor selection and insert, not a bug.
+- **A flag-back must explain itself** → `flag_requires_note` rejects
+  `action = 'flag_to_assistant'` with a null *or whitespace-only* note. An
+  unexplained flag cannot be acted on by the assistant who receives it.
+- **One review per assessment** → unique index. A change of mind is a new
+  assessment or a consultation, not a rewritten review.
+
+Also: `consultations` has no INSERT policy for `authenticated` (scheduling
+involves load balancing and a timer a client must not forge), and the only
+client-writable part of a `doctor_review` is the assistant's
+acknowledgement — the clinical content is immutable once written.
+
+**A duplicate table was avoided by accident.** The first draft of migration
+0011 created a `doctor_availability` table and collided with the *enum* of
+that name from migration 0001. Checking what already existed showed
+`public.doctors` already carries `availability_status`, `specialities` and
+`max_concurrent_cases` — everything the load balancer needs. The new table
+would have been a second source of truth for the same fact, and the two
+would have drifted. Dropped it; added indexes to `doctors` instead.
+
+---
+
+## D-045 — A colon in a BullMQ job id would have broken every tolerance window
+The end-to-end test caught something no unit test would have: BullMQ
+**rejects `:` in a custom job id** (it uses `:` as its own Redis key
+separator), failing with `Custom Id cannot contain :`.
+
+`jobIdFor()` originally returned `tolerance:${consultationId}`. The error
+surfaces only at enqueue time against real Redis, so **every single
+tolerance window would have silently failed to arm in production** — and
+the symptom would have been "missed calls are never reassigned", days
+later, with no obvious cause. Now `tolerance-${consultationId}`.
+
+This is the second time in this project that a real end-to-end check caught
+something the mocked suite could not (the first was Groq returning a
+malformed differential, D-036). Both argue for keeping the `*:check`
+scripts as a standing habit, not a one-off.
+
+**Both tolerance paths verified against real Redis and a real database:**
+- Doctor does not answer → call marked `missed`, auto-reassigned to a
+  different available doctor, `reassign_count` incremented, chain traceable
+  via `reassigned_from`.
+- Doctor answers in time → timer disarmed, no reassignment, exactly one
+  consultation left `active`.
+
+Reassignment excludes every doctor who already missed the same chain and
+gives up after `MAX_REASSIGNMENTS` (3) rather than looping forever.
+Doctor selection is least-loaded-first with a random tie-break, so an
+all-idle pool does not funnel every case to the same doctor.

@@ -49,6 +49,19 @@ const schema = z.object({
   LIVEKIT_URL: z.string().url().optional(),
   LIVEKIT_API_KEY: z.string().min(1).optional(),
   LIVEKIT_API_SECRET: z.string().min(1).optional(),
+
+  // ---- Redis / BullMQ (D-043) ----
+  // Must be rediss:// for Upstash — ioredis negotiates TLS from the scheme,
+  // and a plain redis:// URL fails in a way that looks like a network fault.
+  REDIS_URL: z
+    .string()
+    .startsWith('redis')
+    .refine(
+      (v) => !v.includes('upstash.io') || v.startsWith('rediss://'),
+      'Upstash requires TLS: use the rediss:// scheme, not redis://',
+    )
+    .optional(),
+  UPSTASH_REDIS_REST_URL: z.string().url().optional(),
 });
 
 const parsed = schema.safeParse(process.env);
