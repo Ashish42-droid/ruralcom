@@ -91,9 +91,17 @@ export const env = Object.freeze({
   ...raw,
   isProduction: raw.NODE_ENV === 'production',
   isTest: raw.NODE_ENV === 'test',
-  corsOrigins: raw.CORS_ORIGINS.split(',')
-    .map((o) => o.trim())
-    .filter(Boolean),
+  // The API also serves the demo UI (app.js), so requests originate from
+  // the API's OWN origin. Without it in the allowlist the browser's Origin
+  // header is rejected and every call from the UI fails CORS — which
+  // surfaces to the client as an opaque 500, not an obvious CORS error.
+  corsOrigins: [
+    ...new Set(
+      [...raw.CORS_ORIGINS.split(','), raw.API_BASE_URL]
+        .map((o) => o.trim())
+        .filter(Boolean),
+    ),
+  ],
 });
 
 export default env;

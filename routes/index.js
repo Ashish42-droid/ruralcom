@@ -20,6 +20,24 @@ import referralRoutes from './referral.routes.js';
 
 const router = Router();
 
+/**
+ * Public bootstrap config for the browser client.
+ *
+ * Only ever the project URL and the ANON key — both are public by design
+ * and every request they make is still subject to row-level security. The
+ * service-role key is never exposed here or anywhere client-reachable.
+ */
+router.get('/config', (req, res) =>
+  res.json({
+    success: true,
+    data: {
+      supabaseUrl: process.env.SUPABASE_URL,
+      supabaseAnonKey: process.env.SUPABASE_ANON_KEY,
+      videoEnabled: Boolean(process.env.LIVEKIT_URL),
+    },
+  }),
+);
+
 router.use('/health', healthRoutes);
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);

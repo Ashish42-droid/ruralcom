@@ -1277,3 +1277,39 @@ rather than through nested string escaping, and a "verify the regex in
 isolation" check must use the same bytes as the file, not a retyped copy
 (the retyped version dropped the backslashes and passed, which actively
 misled the diagnosis).
+
+---
+
+## D-061 — Demo UI: one file, no build step, served by the API
+Owner needed a demonstrable prototype quickly. Built `public/index.html` as
+a single self-contained page — vanilla JS, no framework, no bundler, no
+`npm install` — served as static files by the existing Express app.
+
+**Why not the Next.js frontend from the Phase 1 plan:** that is Phase 8 and
+a substantial build (SSR, 3D, PWA, offline). What was needed here was
+something runnable *now* that proves the backend works end to end. This is
+explicitly a demo shell, not the production frontend, and the two are not
+in conflict — `web/` remains the slot for the real one.
+
+Serving it from the API keeps everything to one origin and one process:
+`npm run dev`, open the page, done. No second server, no CORS to configure,
+nothing to explain on stage.
+
+Auth talks to Supabase's REST token endpoint directly rather than pulling
+in the JS SDK, so the page stays dependency-free. `GET /api/v1/config`
+exposes only the project URL and the **anon** key — both public by design,
+both still subject to RLS. The service-role key is never client-reachable.
+
+**A bug this immediately surfaced:** the UI is now served from the API's own
+origin, so the browser sends `Origin: http://localhost:4000` on every
+fetch — and that origin was not in `CORS_ORIGINS`. The CORS callback threw,
+which Express surfaced as an opaque **500**, not as a recognisable CORS
+error. `config/env.js` now always includes `API_BASE_URL` in the allowlist.
+Worth noting because the symptom pointed nowhere near the cause.
+
+Verified by driving the real page in a browser: login as a seeded
+assistant, register a patient (health ID 4898 2507 6576), record vitals and
+symptoms, run a live assessment (**HIGH**), see the danger-zone state
+activate, rank four hospitals, issue a referral to Bilhaur CHC at 0.63 km
+with 9/30 beds, and watch the danger zone clear on print. Every call
+returned 200/201.

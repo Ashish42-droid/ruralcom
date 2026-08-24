@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RuralAI — Virtual Village Clinic</title>
+<style>
+  :root{
+    --bg:#0b1220; --panel:#121c2e; --panel-2:#18243a; --line:#243350;
+    --text:#e6edf7; --muted:#8fa3c0; --accent:#4c8dff; --accent-2:#2f6fe0;
+    --low:#2ecc8f; --medium:#f0a92e; --high:#ff4d5e; --radius:14px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+  a{color:var(--accent)}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px}
+  header{display:flex;align-items:center;gap:14px;padding:16px 20px;
+    border-bottom:1px solid var(--line);background:#0d1626;position:sticky;top:0;z-index:20}
+  .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#7bd4ff);
+    display:grid;place-items:center;font-weight:800;color:#08111f}
+  .brand b{font-size:16px}
+  .brand span{display:block;font-size:12px;color:var(--muted)}
+  .spacer{flex:1}
+  .pill{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:16px}
+  .card h2{margin:0 0 4px;font-size:17px}
+  .card p.sub{margin:0 0 16px;color:var(--muted);font-size:13px}
+  label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}
+  input,select,textarea{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line);
+    background:#0e1728;color:var(--text);font:inherit}
+  textarea{min-height:74px;resize:vertical}
+  button{background:var(--accent);color:#06101f;border:0;padding:11px 16px;border-radius:10px;
+    font-weight:650;cursor:pointer;font:inherit}
+  button:hover{background:#69a0ff}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  button.ghost{background:transparent;color:var(--text);border:1px solid var(--line);font-weight:500}
+  button.ghost:hover{background:var(--panel-2)}
+  button.danger{background:var(--high);color:#fff}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .grid{display:grid;gap:16px}
+  @media(min-width:860px){.grid.two{grid-template-columns:1fr 1fr}.grid.v5{grid-template-columns:repeat(5,1fr)}}
+  .tabs{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+  .tab{padding:9px 15px;border-radius:10px;border:1px solid var(--line);cursor:pointer;font-size:14px;color:var(--muted)}
+  .tab.on{background:var(--accent);color:#06101f;border-color:transparent;font-weight:650}
+  .hidden{display:none!important}
+  .muted{color:var(--muted)}
+  .mono{font-family:ui-monospace,"SF Mono",Consolas,monospace;font-size:13px}
+  .tier{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;
+    font-weight:750;font-size:13px;letter-spacing:.4px}
+  .tier.low{background:rgba(46,204,143,.14);color:var(--low);border:1px solid rgba(46,204,143,.35)}
+  .tier.medium{background:rgba(240,169,46,.14);color:var(--medium);border:1px solid rgba(240,169,46,.35)}
+  .tier.high{background:rgba(255,77,94,.16);color:var(--high);border:1px solid rgba(255,77,94,.4)}
+  .dot{width:8px;height:8px;border-radius:50%;background:currentColor}
+  .list{display:flex;flex-direction:column;gap:9px}
+  .item{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:12px 14px;
+    display:flex;gap:12px;align-items:center;cursor:pointer}
+  .item:hover{border-color:var(--accent)}
+  .item .grow{flex:1;min-width:0}
+  .item b{display:block;font-size:14px}
+  .item small{color:var(--muted)}
+  .log{background:#08101d;border:1px solid var(--line);border-radius:11px;padding:12px;
+    max-height:280px;overflow:auto;font-family:ui-monospace,Consolas,monospace;font-size:12.5px;line-height:1.7}
+  .log .ok{color:var(--low)} .log .warn{color:var(--medium)} .log .err{color:var(--high)} .log .dim{color:var(--muted)}
+  .banner{padding:11px 14px;border-radius:11px;font-size:13px;margin-bottom:14px;border:1px solid}
+  .banner.warn{background:rgba(240,169,46,.1);border-color:rgba(240,169,46,.35);color:#ffd489}
+  .banner.err{background:rgba(255,77,94,.1);border-color:rgba(255,77,94,.35);color:#ffb3ba}
+  .banner.info{background:rgba(76,141,255,.1);border-color:rgba(76,141,255,.3);color:#b9d3ff}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  .flag-low,.flag-critical_low{color:var(--medium)} .flag-high,.flag-critical_high{color:var(--high)}
+  .flag-normal{color:var(--low)}
+  /* HIGH-tier danger zone */
+  body.danger{background:#1a0710}
+  body.danger header{background:#2a0a14;border-color:#5a1524}
+  .dangerbar{display:none;background:linear-gradient(90deg,#c31432,#8b0f22);padding:13px 20px;
+    font-weight:700;letter-spacing:.5px;animation:pulse 1.6s ease-in-out infinite}
+  body.danger .dangerbar{display:block}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.72}}
+  .steps{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .step{flex:1;min-width:92px;padding:8px 10px;border-radius:9px;background:var(--panel-2);
+    border:1px solid var(--line);font-size:12px;color:var(--muted);text-align:center}
+  .step.done{border-color:var(--low);color:var(--low)}
+  .step.now{border-color:var(--accent);color:var(--text);background:rgba(76,141,255,.12)}
+  .kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--line);font-size:13.5px}
+  .kv:last-child{border:0}
+  .kv span:first-child{color:var(--muted)}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.25);
+    border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<div class="dangerbar">⚠ DANGER ZONE — HIGH RISK PATIENT — REFERRAL REQUIRED</div>
+
+<header>
+  <div class="logo">R</div>
+  <div class="brand"><b>RuralAI</b><span>AI-Assisted Virtual Village Clinic</span></div>
+  <div class="spacer"></div>
+  <span class="pill" id="whoami">not signed in</span>
+  <button class="ghost hidden" id="signout">Sign out</button>
+</header>
+
+<div class="wrap">
+
+  <!-- ══════════ LOGIN ══════════ -->
+  <section id="loginView">
+    <div class="banner info">
+      <b>Demonstration build.</b> All patient, doctor and facility data is fictional and clearly
+      marked. Triage thresholds are derived from published sources (NEWS2, WHO IMCI, PALS) but are
+      <b>not clinically validated</b>. Not for clinical use.
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <h2>Sign in</h2>
+        <p class="sub">Use a seeded demo account. Accounts are admin-provisioned; there is no public signup.</p>
+        <label>Email</label>
+        <input id="email" value="demo.assistant.1@ruralai-demo.invalid" />
+        <label>Password</label>
+        <input id="password" type="password" placeholder="SEED_DEMO_PASSWORD" />
+        <div class="row" style="margin-top:14px">
+          <button id="loginBtn">Sign in</button>
+          <button class="ghost" data-fill="demo.assistant.1@ruralai-demo.invalid">Assistant</button>
+          <button class="ghost" data-fill="demo.doctor.up-knp.2@ruralai-demo.invalid">Doctor</button>
+        </div>
+        <div id="loginMsg" class="muted" style="margin-top:12px;font-size:13px"></div>
+      </div>
+      <div class="card">
+        <h2>What this prototype does</h2>
+        <p class="sub">Every item below is implemented and running against live infrastructure.</p>
+        <div class="kv"><span>Patient registration</span><span>12-digit health ID, check-digit validated</span></div>
+        <div class="kv"><span>Intake</span><span>Vitals · symptoms · voice · document upload</span></div>
+        <div class="kv"><span>OCR</span><span>Tesseract, ~93% on printed lab reports</span></div>
+        <div class="kv"><span>Triage</span><span>final = MAX(rules, model), DB-enforced</span></div>
+        <div class="kv"><span>Assessment</span><span>Groq LLM + deterministic red-flag rules</span></div>
+        <div class="kv"><span>HIGH tier</span><span>Nearest-hospital referral + printable slip</span></div>
+        <div class="kv"><span>Doctor</span><span>Review queue, approve or flag back</span></div>
+        <div class="kv"><span>Isolation</span><span>Postgres row-level security</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ APP ══════════ -->
+  <section id="appView" class="hidden">
+    <div class="tabs">
+      <div class="tab on" data-tab="intake">Patient intake</div>
+      <div class="tab" data-tab="doctor">Doctor portal</div>
+      <div class="tab" data-tab="system">System status</div>
+    </div>
+
+    <!-- ─── INTAKE ─── -->
+    <div id="tab-intake">
+      <div class="steps" id="steps"></div>
+      <div class="grid two">
+        <div>
+          <div class="card">
+            <h2>1 · Register patient</h2>
+            <p class="sub">Issues a 12-digit RuralAI Health ID. No government ID data is stored.</p>
+            <div class="row">
+              <div style="flex:2;min-width:150px"><label>Full name</label><input id="pName" value="Demo Patient" /></div>
+              <div style="flex:1;min-width:80px"><label>Age</label><input id="pAge" type="number" value="54" /></div>
+              <div style="flex:1;min-width:100px"><label>Sex</label>
+                <select id="pSex"><option value="male">Male</option><option value="female">Female</option>
+                <option value="undisclosed">Undisclosed</option></select></div>
+            </div>
+            <label>Chief complaint</label>
+            <input id="pComplaint" value="chest pain" />
+            <div class="row" style="margin-top:14px">
+              <button id="regBtn">Register &amp; open visit</button>
+              <button class="ghost" id="scenarioHigh">Load HIGH scenario</button>
+              <button class="ghost" id="scenarioLow">Load LOW scenario</button>
+            </div>
+            <div id="patientInfo" class="hidden" style="margin-top:14px">
+              <div class="kv"><span>Health ID</span><span class="mono" id="outRhid"></span></div>
+              <div class="kv"><span>Visit</span><span class="mono" id="outVisit"></span></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>2 · Vitals</h2>
+            <p class="sub">Partial sets are normal. Missing vitals raise the tier — absence is not "normal".</p>
+            <div class="grid v5" style="grid-template-columns:repeat(auto-fit,minmax(90px,1fr))">
+              <div><label>Temp °C</label><input id="vTemp" type="number" step="0.1" value="36.9" /></div>
+              <div><label>SpO₂ %</label><input id="vSpo2" type="number" value="88" /></div>
+              <div><label>Systolic</label><input id="vSys" type="number" value="86" /></div>
+              <div><label>Diastolic</label><input id="vDia" type="number" value="58" /></div>
+              <div><label>Pulse</label><input id="vPulse" type="number" value="132" /></div>
+            </div>
+            <button style="margin-top:14px" id="vitalsBtn" disabled>Record vitals</button>
+          </div>
+
+          <div class="card">
+            <h2>3 · Symptoms</h2>
+            <p class="sub">Original text is always kept. Voice uses Whisper and rejects no-speech audio.</p>
+            <textarea id="sText">crushing chest pain radiating to the left arm, cannot breathe, cold and clammy</textarea>
+            <div class="row" style="margin-top:12px">
+              <select id="sLang" style="max-width:150px">
+                <option value="en">English</option><option value="hi">हिन्दी</option>
+                <option value="bn">বাংলা</option><option value="ta">தமிழ்</option>
+              </select>
+              <button id="sympBtn" disabled>Record symptoms</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <h2>4 · Lab report <span class="muted" style="font-weight:400;font-size:13px">(optional)</span></h2>
+            <p class="sub">OCR runs in the background. Values are compared to reference ranges by arithmetic.</p>
+            <input type="file" id="labFile" accept="image/*" />
+            <button style="margin-top:12px" id="labBtn" disabled>Upload &amp; run OCR</button>
+            <div id="labResults" class="hidden" style="margin-top:14px"></div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h2>5 · AI assessment</h2>
+            <p class="sub">Deterministic rules set the floor; the model may only raise it.</p>
+            <button id="assessBtn" disabled>Run AI assessment</button>
+            <div id="assessOut" class="hidden" style="margin-top:16px"></div>
+          </div>
+          <div class="card" id="referralCard" style="display:none">
+            <h2 style="color:var(--high)">6 · HIGH-tier referral</h2>
+            <p class="sub">Nearest capable hospital, ranked by bed availability before distance.</p>
+            <div id="referralOut"></div>
+          </div>
+          <div class="card">
+            <h2>Activity</h2>
+            <p class="sub">Live API calls.</p>
+            <div class="log" id="log"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── DOCTOR ─── -->
+    <div id="tab-doctor" class="hidden">
+      <div class="grid two">
+        <div class="card">
+          <h2>Review queue</h2>
+          <p class="sub">LOW-tier assessments awaiting a decision. Sign in as a doctor to see these.</p>
+          <button class="ghost" id="loadReviews">Refresh queue</button>
+          <div class="list" id="reviewList" style="margin-top:14px"></div>
+        </div>
+        <div class="card">
+          <h2>Decision</h2>
+          <p class="sub">Approving closes the case. Flagging sends it back to the assistant with a
+            mandatory note — enforced by a database constraint.</p>
+          <div id="reviewDetail"><span class="muted">Select a case from the queue.</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Consultation queue</h2>
+        <p class="sub">MEDIUM-tier calls assigned to you, with the 5-minute tolerance window.</p>
+        <button class="ghost" id="loadCalls">Refresh</button>
+        <div class="list" id="callList" style="margin-top:14px"></div>
+      </div>
+    </div>
+
+    <!-- ─── SYSTEM ─── -->
+    <div id="tab-system" class="hidden">
+      <div class="card">
+        <h2>Service health</h2>
+        <p class="sub">Live dependency checks.</p>
+        <button class="ghost" id="loadHealth">Refresh</button>
+        <div id="healthOut" style="margin-top:14px"></div>
+      </div>
+      <div class="card">
+        <h2>Region coverage</h2>
+        <p class="sub">Seeded Kanpur demo data. All rows marked PLACEHOLDER_DEMO.</p>
+        <div id="regionOut" class="muted">Sign in as an admin to load. Doctors and assistants are correctly denied.</div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const API = '/api/v1';
+let CFG = null, TOKEN = null, USER = null;
+const S = { patientId:null, visitId:null, assessment:null, step:0 };
+
+function log(msg, cls='dim'){
+  const el=$('#log'); const t=new Date().toLocaleTimeString();
+  el.insertAdjacentHTML('afterbegin', `<div><span class="dim">${t}</span> <span class="${cls}">${msg}</span></div>`);
+}
+function setSteps(n){
+  S.step=n;
+  const names=['Register','Vitals','Symptoms','Labs','Assess','Referral'];
+  $('#steps').innerHTML=names.map((x,i)=>
+    `<div class="step ${i<n?'done':i===n?'now':''}">${i+1}. ${x}</div>`).join('');
+}
+async function api(path,{method='GET',body,form}={}){
+  const opt={method,headers:{}};
+  if(TOKEN) opt.headers.Authorization='Bearer '+TOKEN;
+  if(form) opt.body=form;
+  else if(body){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body);}
+  const r=await fetch(API+path,opt);
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok){
+    const m=j.error?.message||r.status;
+    log(`${method} ${path} → ${r.status} ${m}`,'err');
+    throw new Error(m);
+  }
+  log(`${method} ${path} → ${r.status}`,'ok');
+  return j.data;
+}
+
+// ── Boot ──
+CFG = await (await fetch(API+'/config')).json().then(r=>r.data);
+
+// ── Auth ──
+document.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>{$('#email').value=b.dataset.fill;});
+
+$('#loginBtn').onclick = async () => {
+  const btn=$('#loginBtn'); btn.disabled=true; btn.innerHTML='<span class="spin"></span> Signing in…';
+  $('#loginMsg').textContent='';
+  try{
+    const r = await fetch(`${CFG.supabaseUrl}/auth/v1/token?grant_type=password`,{
+      method:'POST',
+      headers:{'Content-Type':'application/json',apikey:CFG.supabaseAnonKey},
+      body:JSON.stringify({email:$('#email').value.trim(),password:$('#password').value}),
+    });
+    const j=await r.json();
+    if(!r.ok) throw new Error(j.error_description||j.msg||'Invalid credentials');
+    TOKEN=j.access_token;
+    const claims=JSON.parse(atob(j.access_token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+    USER={role:claims.app_role,email:j.user.email};
+    if(!USER.role) throw new Error('This account has no staff profile.');
+    $('#whoami').textContent=`${USER.role} · ${USER.email.split('@')[0]}`;
+    $('#loginView').classList.add('hidden'); $('#appView').classList.remove('hidden');
+    $('#signout').classList.remove('hidden');
+    setSteps(0); log(`signed in as ${USER.role}`,'ok');
+    if(USER.role!=='clinical_assistant') switchTab('doctor');
+  }catch(e){ $('#loginMsg').innerHTML=`<span style="color:var(--high)">${e.message}</span>`; }
+  finally{ btn.disabled=false; btn.textContent='Sign in'; }
+};
+$('#signout').onclick=()=>location.reload();
+
+// ── Tabs ──
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.tab===name));
+  ['intake','doctor','system'].forEach(t=>$('#tab-'+t).classList.toggle('hidden',t!==name));
+}
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>switchTab(t.dataset.tab));
+
+// ── Scenarios ──
+$('#scenarioHigh').onclick=()=>{
+  $('#pName').value='Demo Patient'; $('#pAge').value=54; $('#pComplaint').value='chest pain';
+  $('#vTemp').value=36.9;$('#vSpo2').value=88;$('#vSys').value=86;$('#vDia').value=58;$('#vPulse').value=132;
+  $('#sText').value='crushing chest pain radiating to the left arm, cannot breathe, cold and clammy';
+  log('loaded HIGH scenario');
+};
+$('#scenarioLow').onclick=()=>{
+  $('#pName').value='Demo Patient'; $('#pAge').value=28; $('#pComplaint').value='small cut';
+  $('#vTemp').value=36.8;$('#vSpo2').value=98;$('#vSys').value=118;$('#vDia').value=76;$('#vPulse').value=74;
+  $('#sText').value='small clean cut on the finger from kitchen work, bleeding has stopped';
+  log('loaded LOW scenario');
+};
+
+// ── Intake flow ──
+$('#regBtn').onclick = async () => {
+  const b=$('#regBtn'); b.disabled=true;
+  try{
+    const p=await api('/patients',{method:'POST',body:{
+      fullName:$('#pName').value, ageYears:+$('#pAge').value,
+      sex:$('#pSex').value, preferredLanguage:'hi'}});
+    S.patientId=p.id;
+    const v=await api(`/patients/${p.id}/visits`,{method:'POST',
+      body:{chiefComplaint:$('#pComplaint').value}});
+    S.visitId=v.id;
+    $('#outRhid').textContent=p.rhidFormatted; $('#outVisit').textContent=v.id.slice(0,8)+'…';
+    $('#patientInfo').classList.remove('hidden');
+    ['#vitalsBtn','#sympBtn','#labBtn','#assessBtn'].forEach(s=>$(s).disabled=false);
+    setSteps(1);
+  }catch(e){} finally{ b.disabled=false; }
+};
+
+$('#vitalsBtn').onclick = async () => {
+  const b=$('#vitalsBtn'); b.disabled=true;
+  const body={};
+  const map={vTemp:'temperatureC',vSpo2:'spo2',vSys:'systolic',vDia:'diastolic',vPulse:'pulseBpm'};
+  for(const [id,key] of Object.entries(map)){ const val=$('#'+id).value; if(val!=='') body[key]=+val; }
+  try{ await api(`/clinical/visits/${S.visitId}/vitals`,{method:'POST',body}); setSteps(2); }
+  catch(e){} finally{ b.disabled=false; }
+};
+
+$('#sympBtn').onclick = async () => {
+  const b=$('#sympBtn'); b.disabled=true;
+  try{
+    await api(`/intake/visits/${S.visitId}/symptoms`,{method:'POST',
+      body:{rawText:$('#sText').value, language:$('#sLang').value}});
+    setSteps(3);
+  }catch(e){} finally{ b.disabled=false; }
+};
+
+$('#labBtn').onclick = async () => {
+  const f=$('#labFile').files[0];
+  if(!f){ log('choose an image first','warn'); return; }
+  const b=$('#labBtn'); b.disabled=true; b.innerHTML='<span class="spin"></span> Uploading…';
+  try{
+    const fd=new FormData();
+    fd.append('files',f); fd.append('type','lab_report'); fd.append('captureSource','camera');
+    await api(`/intake/visits/${S.visitId}/attachments`,{method:'POST',form:fd});
+    b.innerHTML='<span class="spin"></span> Running OCR…';
+    log('OCR running in background…','warn');
+    let att=null;
+    for(let i=0;i<30;i++){
+      await new Promise(r=>setTimeout(r,2000));
+      const list=await api(`/intake/visits/${S.visitId}/attachments`);
+      att=list[0]; if(att.ocrStatus!=='pending') break;
+    }
+    $('#labResults').classList.remove('hidden');
+    $('#labResults').innerHTML = att.ocrStatus==='done'
+      ? `<div class="banner info">OCR complete · flagged for human review (always).
+          Abnormal values now feed the triage rules.</div>`
+      : `<div class="banner warn">OCR ${att.ocrStatus}. The document is stored; values were not extracted.</div>`;
+    setSteps(4);
+  }catch(e){} finally{ b.disabled=false; b.textContent='Upload & run OCR'; }
+};
+
+// ── Assessment ──
+$('#assessBtn').onclick = async () => {
+  const b=$('#assessBtn'); b.disabled=true; b.innerHTML='<span class="spin"></span> Assessing…';
+  try{
+    const a=await api(`/clinical/visits/${S.visitId}/assess`,{method:'POST'});
+    S.assessment=a; renderAssessment(a); setSteps(5);
+    if(a.finalTier==='high'){ document.body.classList.add('danger'); await loadReferral(); }
+    else document.body.classList.remove('danger');
+  }catch(e){} finally{ b.disabled=false; b.textContent='Run AI assessment'; }
+};
+
+function renderAssessment(a){
+  const hits=a.ruleHits.map(h=>`<code class="mono">${h.code}</code>`).join(' ') || '<span class="muted">none</span>';
+  const diff=(a.differential||[]).slice(0,4).map(d=>
+    `<div class="kv"><span>${d.condition}</span><span>${Math.round(d.confidence*100)}%</span></div>`).join('')
+    || '<div class="muted" style="font-size:13px">No differential returned.</div>';
+  $('#assessOut').classList.remove('hidden');
+  $('#assessOut').innerHTML=`
+    <div class="row" style="align-items:center;gap:14px;margin-bottom:14px">
+      <span class="tier ${a.finalTier}"><span class="dot"></span>${a.finalTier.toUpperCase()} RISK</span>
+      <span class="muted mono" style="font-size:12px">${a.latencyMs}ms</span>
+    </div>
+    <div class="kv"><span>Rule floor</span><span class="mono">${a.ruleTier}</span></div>
+    <div class="kv"><span>Model tier</span><span class="mono">${a.modelTier ?? '—'}</span></div>
+    <div class="kv"><span>Final</span><span class="mono"><b>MAX = ${a.finalTier}</b></span></div>
+    <div class="kv"><span>Why</span><span class="mono" style="font-size:12px">${a.escalationReason}</span></div>
+    ${a.modelAttemptedDeEscalation?'<div class="banner err" style="margin-top:12px">The model proposed a LOWER tier than the rules. The rule floor was applied.</div>':''}
+    <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px">Rule hits</h3>
+    <div style="font-size:12px;line-height:2">${hits}</div>
+    <h3 style="font-size:13px;color:var(--muted);margin:16px 0 6px;text-transform:uppercase;letter-spacing:.5px">Differential</h3>
+    ${diff}
+    ${a.reasoning?`<p class="muted" style="font-size:13px;margin-top:12px">${a.reasoning}</p>`:''}`;
+}
+
+async function loadReferral(){
+  $('#referralCard').style.display='block';
+  try{
+    const h=await api(`/referrals/visits/${S.visitId}/hospitals`);
+    const rows=h.hospitals.slice(0,4).map(x=>`<tr>
+      <td>${x.name}<br><small class="muted">${x.type.replace(/_/g,' ')}</small></td>
+      <td class="mono">${x.distanceKm ?? '—'} km</td>
+      <td class="mono ${x.availableBeds>0?'flag-normal':'flag-high'}">${x.availableBeds}/${x.totalBeds}</td>
+      <td>${x.hasEmergency?'✓':'—'}</td></tr>`).join('');
+    $('#referralOut').innerHTML=`
+      <div class="banner warn">Ranked by <b>free beds → emergency capability → distance</b>.
+        The nearest hospital that cannot admit is a wasted journey.</div>
+      <table><thead><tr><th>Hospital</th><th>Distance</th><th>Beds</th><th>Emerg</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+      <p class="muted" style="font-size:12px;margin:10px 0 0">${h.notice}</p>
+      <button class="danger" style="margin-top:14px" id="issueBtn">Issue referral &amp; generate slip</button>`;
+    $('#issueBtn').onclick=issueReferral;
+  }catch(e){}
+}
+
+async function issueReferral(){
+  const b=$('#issueBtn'); b.disabled=true; b.innerHTML='<span class="spin"></span> Issuing…';
+  try{
+    const r=await api(`/referrals/visits/${S.visitId}`,{method:'POST',
+      body:{reason:'HIGH-tier assessment — urgent transfer required'}});
+    const warns=r.warnings.map(w=>
+      `<div class="banner ${w.severity==='critical'?'err':w.severity==='warning'?'warn':'info'}"
+        style="margin:8px 0 0"><b>${w.code}</b> — ${w.message}</div>`).join('');
+    $('#referralOut').innerHTML=`
+      <div class="kv"><span>Destination</span><span><b>${r.referral.contactSnapshot.name}</b></span></div>
+      <div class="kv"><span>Contact</span><span class="mono">${r.referral.contactSnapshot.contact}</span></div>
+      <div class="kv"><span>Distance</span><span class="mono">${r.referral.distanceKm} km (straight line)</span></div>
+      <div class="kv"><span>Beds at issue</span><span class="mono">${r.referral.capacitySnapshot.availableBeds}/${r.referral.capacitySnapshot.totalBeds}</span></div>
+      <div class="kv"><span>Document</span><span class="mono">${r.document.documentNumber}</span></div>
+      <div class="kv"><span>Charges</span><span class="mono">${r.document.totalAmount} ${r.document.currency}${r.document.chargesAreProvisional?' (provisional)':''}</span></div>
+      ${warns}
+      <button style="margin-top:14px" id="printBtn">Mark printed — clears danger zone</button>`;
+    $('#printBtn').onclick=async()=>{
+      await api(`/referrals/documents/${r.document.id}/printed`,{method:'POST'});
+      document.body.classList.remove('danger');
+      $('#referralOut').insertAdjacentHTML('beforeend',
+        '<div class="banner info" style="margin-top:12px">Slip printed. Danger-zone state cleared.</div>');
+      $('#printBtn').remove();
+    };
+  }catch(e){ b.disabled=false; b.textContent='Issue referral & generate slip'; }
+}
+
+// ── Doctor ──
+$('#loadReviews').onclick = async () => {
+  try{
+    const q=await api('/consultations/reviews/pending');
+    $('#reviewList').innerHTML = q.length ? q.map(c=>`
+      <div class="item" data-id="${c.assessmentId}">
+        <span class="tier low"><span class="dot"></span>LOW</span>
+        <div class="grow"><b>${c.patient?.fullName ?? 'Patient'}</b>
+          <small>${c.patient?.ageYears ?? '?'}y · ${c.differential?.[0]?.condition ?? 'no differential'}</small></div>
+      </div>`).join('') : '<span class="muted">Queue is empty.</span>';
+    document.querySelectorAll('#reviewList .item').forEach(el=>
+      el.onclick=()=>showReview(q.find(x=>x.assessmentId===el.dataset.id)));
+  }catch(e){}
+};
+
+function showReview(c){
+  $('#reviewDetail').innerHTML=`
+    <div class="kv"><span>Patient</span><span>${c.patient?.fullName ?? '—'}</span></div>
+    <div class="kv"><span>Top differential</span><span>${c.differential?.[0]?.condition ?? '—'}</span></div>
+    <p class="muted" style="font-size:13px;margin:12px 0">${c.reasoning ?? ''}</p>
+    <label>Clinical note <span class="muted">(required to flag back)</span></label>
+    <textarea id="rNote" placeholder="e.g. Re-check the BP, it looks transposed"></textarea>
+    <div class="row" style="margin-top:12px">
+      <button id="approveBtn">Approve AI response</button>
+      <button class="ghost" id="flagBtn">Flag back to assistant</button>
+    </div>
+    <div id="rMsg" style="margin-top:12px"></div>`;
+  $('#approveBtn').onclick=()=>submitReview(c.assessmentId,'approve');
+  $('#flagBtn').onclick=()=>submitReview(c.assessmentId,'flag_to_assistant');
+}
+
+async function submitReview(id,action){
+  try{
+    await api(`/consultations/assessments/${id}/review`,{method:'POST',
+      body:{action, clinicalNote:$('#rNote').value||undefined}});
+    $('#rMsg').innerHTML=`<div class="banner info">Recorded: ${action.replace(/_/g,' ')}.
+      ${action==='flag_to_assistant'?'The assistant must acknowledge it before the case can close.':''}</div>`;
+    $('#loadReviews').click();
+  }catch(e){
+    $('#rMsg').innerHTML=`<div class="banner err">${e.message}</div>`;
+  }
+}
+
+$('#loadCalls').onclick = async () => {
+  try{
+    const q=await api('/consultations/queue');
+    $('#callList').innerHTML = q.length ? q.map(c=>`
+      <div class="item"><span class="tier medium"><span class="dot"></span>${c.status}</span>
+      <div class="grow"><b>Consultation</b><small class="mono">tolerance expires ${new Date(c.toleranceExpiresAt).toLocaleTimeString()}</small></div>
+      </div>`).join('') : '<span class="muted">No calls assigned.</span>';
+  }catch(e){}
+};
+
+// ── System ──
+$('#loadHealth').onclick = async () => {
+  const h=await api('/health');
+  $('#healthOut').innerHTML=Object.entries(h.checks).map(([k,v])=>
+    `<div class="kv"><span>${k}</span><span class="${v.ok?'flag-normal':'flag-high'}">${v.ok?'OK':'FAIL'} ${v.version?`· ${v.version}`:''} ${v.latencyMs?`· ${v.latencyMs}ms`:''}</span></div>`).join('')
+    + `<div class="kv"><span>instance</span><span class="mono">${h.instance}</span></div>`;
+  try{
+    const r=await api('/admin/regions/summary');
+    $('#regionOut').innerHTML=r.map(st=>`<h3 style="font-size:14px;margin:0 0 8px">${st.name}</h3>`+
+      st.districts.map(d=>`<div class="kv"><span>${d.name}</span>
+      <span class="mono">${d.doctors.available}/${d.doctors.total} doctors · ${d.facilities.total} facilities</span></div>`).join('')).join('');
+  }catch(e){
+    $('#regionOut').innerHTML='<span class="muted">Admin-only — correctly denied for this role (403).</span>';
+  }
+};
+
+setSteps(0);
+</script>
+</body>
+</html>

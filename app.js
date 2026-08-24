@@ -11,6 +11,9 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
 
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import env from './config/env.js';
 import logger from './config/logger.js';
 import apiRoutes from './routes/index.js';
@@ -68,6 +71,11 @@ app.use(
 app.use(generalLimiter);
 
 app.use('/api/v1', apiRoutes);
+
+// Demo UI. Served from the API so there is one origin, one process and no
+// CORS to configure for the demo — see docs/DECISIONS.md D-061.
+const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
+app.use(express.static(publicDir, { index: 'index.html' }));
 
 app.use(notFound);
 app.use(errorHandler);
