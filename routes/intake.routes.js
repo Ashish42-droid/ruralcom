@@ -4,7 +4,7 @@ import * as intakeController from '../controllers/intake.controller.js';
 import { authenticate } from '../middlewares/authenticate.js';
 import { requireRole, denyAdminClinicalWrite } from '../middlewares/rbac.js';
 import { validate } from '../middlewares/validate.js';
-import { acceptFiles, handleUploadErrors } from '../middlewares/upload.js';
+import { acceptFiles, acceptAudio, handleUploadErrors } from '../middlewares/upload.js';
 import {
   visitIdParamSchema,
   attachmentIdParamSchema,
@@ -52,6 +52,15 @@ router.post(
   assistantOnly,
   validate({ params: visitIdParamSchema, body: recordSymptomSchema }),
   intakeController.recordSymptom,
+);
+
+router.post(
+  '/visits/:visitId/symptoms/voice',
+  assistantOnly,
+  acceptAudio,
+  handleUploadErrors,
+  validate({ params: visitIdParamSchema }),
+  intakeController.recordVoiceSymptom,
 );
 
 router.get(

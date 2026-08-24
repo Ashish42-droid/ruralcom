@@ -36,6 +36,27 @@ const upload = multer({
  */
 export const acceptFiles = upload.array('files', MAX_FILES_PER_BATCH);
 
+/**
+ * Single audio file for voice symptom entry.
+ *
+ * Separate from `acceptFiles` because the accepted types are different: an
+ * audio recording is not a clinical document and must not land in the
+ * image/PDF pipeline.
+ */
+const audioUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 1 },
+  fileFilter(_req, file, cb) {
+    if (/^audio\//.test(file.mimetype) || file.mimetype === 'video/webm') {
+      // Browser MediaRecorder commonly labels audio-only WebM as video/webm.
+      return cb(null, true);
+    }
+    return cb(ApiError.badRequest('Only audio recordings are accepted here'));
+  },
+});
+
+export const acceptAudio = audioUpload.single('audio');
+
 /** Translates multer's own errors into the API's error shape. */
 export function handleUploadErrors(err, _req, _res, next) {
   if (err?.name !== 'MulterError') return next(err);

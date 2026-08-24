@@ -19,7 +19,8 @@
     "db:migrate": "node scripts/migrate.js",
     "llm:check": "node --env-file=.env scripts/llm-smoke.js",
     "livekit:check": "node --env-file=.env scripts/livekit-smoke.js",
-    "assessment:check": "node --env-file=.env scripts/assessment-smoke.js"
+    "assessment:check": "node --env-file=.env scripts/assessment-smoke.js",
+    "seed:demo": "node --env-file=.env scripts/seed-demo.js"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",

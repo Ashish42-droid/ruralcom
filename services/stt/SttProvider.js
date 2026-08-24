@@ -83,6 +83,12 @@ export class SttProvider {
       provider: this.name,
       latencyMs: Date.now() - startedAt,
       language,
+      // Optional signals a provider may supply. Whisper sets
+      // needsHumanConfirmation from its own log-probabilities; a provider
+      // that cannot judge its own output simply omits them.
+      needsHumanConfirmation: result.needsHumanConfirmation ?? false,
+      detectedLanguage: result.detectedLanguage ?? null,
+      durationSeconds: result.durationSeconds ?? null,
     };
   }
 

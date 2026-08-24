@@ -40,6 +40,8 @@ const schema = z.object({
   // triage engine floors every case at MEDIUM — the safe default.
   GROQ_API_KEY: z.string().min(10).optional(),
   GROQ_MODEL_ID: z.string().min(1).optional(),
+  // Whisper for voice intake — same key, no extra credential needed.
+  GROQ_WHISPER_MODEL_ID: z.string().min(1).optional(),
   SELF_HOSTED_LLM_BASE_URL: z.string().url().optional(),
   SELF_HOSTED_LLM_MODEL_ID: z.string().min(1).optional(),
 
@@ -62,6 +64,12 @@ const schema = z.object({
     )
     .optional(),
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
+
+  // ---- Demo seed ----
+  // Required by scripts/seed-demo.js. Deliberately no default: these
+  // accounts can read patient records, so a weak shared password must not
+  // be bakeable into the repository by omission.
+  SEED_DEMO_PASSWORD: z.string().min(12).optional(),
 });
 
 const parsed = schema.safeParse(process.env);

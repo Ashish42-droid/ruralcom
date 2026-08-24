@@ -59,6 +59,10 @@ export async function recordSymptom({ actor, accessToken, visitId, payload, req 
       duration_days: payload.durationDays ?? null,
       onset_date: payload.onsetDate ?? null,
       severity_reported: payload.severityReported ?? null,
+      // Provenance for voice entries, so a low-confidence transcript is
+      // identifiable later rather than indistinguishable from typed text.
+      stt_provider: payload.sttProvider ?? null,
+      stt_confidence: payload.sttConfidence ?? null,
       recorded_by: actor.id,
     })
     .select('*')

@@ -28,4 +28,7 @@ router.patch(
 
 router.get('/regions', adminController.listRegions);
 
+// The state -> district drill-down the admin console is built around.
+router.get('/regions/summary', adminController.regionSummary);
+
 export default router;

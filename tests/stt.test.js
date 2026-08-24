@@ -63,8 +63,8 @@ describe('the adapters are deliberately NOT implemented', () => {
     );
   });
 
-  it('the default chain therefore fails for every demo language', async () => {
-    const service = createSttService();
+  it('a stub-only chain fails for every demo language', async () => {
+    const service = createSttService({ BHASHINI_API_KEY: 'x', GOOGLE_PROJECT_ID: 'y' });
     for (const language of Object.keys(SUPPORTED_LANGUAGES)) {
       await expect(service.transcribe(AUDIO, language)).rejects.toThrow(
         AllProvidersFailedError,
@@ -79,29 +79,37 @@ describe('demo language coverage', () => {
   });
 
   it('no longer accepts Bhojpuri', async () => {
-    const service = createSttService();
+    const service = createSttService({ GROQ_API_KEY: 'x' });
     expect(SUPPORTED_LANGUAGES.bho).toBeUndefined();
     await expect(service.transcribe(AUDIO, 'bho')).rejects.toThrow(
       UnsupportedLanguageError,
     );
   });
 
-  it('both providers cover every demo language', () => {
-    const service = createSttService();
+  it('Groq Whisper covers every demo language', () => {
+    const service = createSttService({ GROQ_API_KEY: 'x' });
     for (const language of Object.keys(SUPPORTED_LANGUAGES)) {
-      expect(service.candidatesFor(language).map((p) => p.name)).toEqual([
-        'bhashini',
-        'google',
-      ]);
+      expect(service.candidatesFor(language).map((p) => p.name)).toEqual(['groq-whisper']);
     }
   });
 
-  it('both providers are candidates for Hindi', () => {
-    const service = createSttService();
-    expect(service.candidatesFor('hi').map((p) => p.name)).toEqual([
-      'bhashini',
-      'google',
-    ]);
+  it('builds the chain from configuration, not unconditionally', () => {
+    // The stubs are only included once they actually have credentials, so
+    // an unconfigured provider never sits in the chain failing on every
+    // request just to be skipped.
+    expect(createSttService({ GROQ_API_KEY: 'x' }).providers.map((p) => p.name))
+      .toEqual(['groq-whisper']);
+
+    expect(
+      createSttService({ GROQ_API_KEY: 'x', BHASHINI_API_KEY: 'y', GOOGLE_PROJECT_ID: 'z' })
+        .providers.map((p) => p.name),
+    ).toEqual(['groq-whisper', 'bhashini', 'google']);
+  });
+
+  it('returns null when nothing is configured', () => {
+    // The intake layer reads null as "voice unavailable" and says so,
+    // rather than storing an untranscribed entry.
+    expect(createSttService({})).toBeNull();
   });
 });
 

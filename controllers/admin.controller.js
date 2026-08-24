@@ -5,7 +5,7 @@
  * enforced by RLS, a database trigger, and `denyAdminClinicalWrite`.
  */
 import * as provisioning from '../services/provisioning.service.js';
-import { supabaseAsUser } from '../config/supabase.js';
+import { supabaseAsUser, supabaseAdmin } from '../config/supabase.js';
 import { ok, created } from '../utils/ApiResponse.js';
 import asyncHandler from '../utils/asyncHandler.js';
 import ApiError from '../utils/ApiError.js';
@@ -95,6 +95,108 @@ export const listRegions = asyncHandler(async (req, res) => {
       warning:
         'Rows marked data_source=PLACEHOLDER_DEMO are seed data, not an ' +
         'authoritative government source.',
+    },
+  });
+});
+
+/**
+ * GET /api/v1/admin/regions/summary
+ *
+ * The state -> district drill-down the admin console is built around:
+ * every district with its facility count and its doctor roster split by
+ * availability, in one round trip.
+ *
+ * Counts come from the SERVICE ROLE deliberately. Admins have no clinical
+ * read (patients, visits, assessments are all invisible to them), but they
+ * do need aggregate operational figures for the regions they manage —
+ * "how many doctors are online in Kanpur Nagar" is a management question,
+ * not a clinical one. Nothing here identifies a patient.
+ */
+export const regionSummary = asyncHandler(async (req, res) => {
+  const [statesRes, districtsRes, facilitiesRes, doctorsRes, assistantsRes] =
+    await Promise.all([
+      supabaseAdmin.from('states').select('id, name, code, data_source').order('name'),
+      supabaseAdmin.from('districts').select('id, name, code, state_id, data_source').order('name'),
+      supabaseAdmin.from('facilities').select('id, district_id, type, is_active'),
+      supabaseAdmin
+        .from('doctors')
+        .select('profile_id, district_id, availability_status, specialities'),
+      supabaseAdmin.from('clinical_assistants').select('profile_id, facility_id'),
+    ]);
+
+  const firstError = [statesRes, districtsRes, facilitiesRes, doctorsRes, assistantsRes]
+    .map((r) => r.error)
+    .find(Boolean);
+  if (firstError) throw ApiError.badRequest(firstError.message);
+
+  const facilityDistrict = new Map(
+    (facilitiesRes.data ?? []).map((f) => [f.id, f.district_id]),
+  );
+
+  const assistantsByDistrict = new Map();
+  for (const a of assistantsRes.data ?? []) {
+    const districtId = facilityDistrict.get(a.facility_id);
+    if (!districtId) continue;
+    assistantsByDistrict.set(districtId, (assistantsByDistrict.get(districtId) ?? 0) + 1);
+  }
+
+  const summary = (statesRes.data ?? []).map((state) => {
+    const districts = (districtsRes.data ?? [])
+      .filter((d) => d.state_id === state.id)
+      .map((d) => {
+        const facilities = (facilitiesRes.data ?? []).filter((f) => f.district_id === d.id);
+        const doctors = (doctorsRes.data ?? []).filter((doc) => doc.district_id === d.id);
+
+        const facilitiesByType = facilities.reduce((acc, f) => {
+          acc[f.type] = (acc[f.type] ?? 0) + 1;
+          return acc;
+        }, {});
+
+        const specialities = [...new Set(doctors.flatMap((doc) => doc.specialities ?? []))].sort();
+
+        return {
+          id: d.id,
+          name: d.name,
+          code: d.code,
+          dataSource: d.data_source,
+          facilities: { total: facilities.length, byType: facilitiesByType },
+          doctors: {
+            total: doctors.length,
+            available: doctors.filter((doc) => doc.availability_status === 'available').length,
+            busy: doctors.filter((doc) => doc.availability_status === 'busy').length,
+            offline: doctors.filter((doc) => doc.availability_status === 'offline').length,
+            specialities,
+          },
+          clinicalAssistants: assistantsByDistrict.get(d.id) ?? 0,
+        };
+      });
+
+    return {
+      id: state.id,
+      name: state.name,
+      code: state.code,
+      dataSource: state.data_source,
+      districts,
+      totals: {
+        districts: districts.length,
+        facilities: districts.reduce((n, d) => n + d.facilities.total, 0),
+        doctors: districts.reduce((n, d) => n + d.doctors.total, 0),
+        doctorsAvailable: districts.reduce((n, d) => n + d.doctors.available, 0),
+        clinicalAssistants: districts.reduce((n, d) => n + d.clinicalAssistants, 0),
+      },
+    };
+  });
+
+  const anyDemo = summary.some(
+    (s) => s.dataSource === 'PLACEHOLDER_DEMO' || s.districts.some((d) => d.dataSource === 'PLACEHOLDER_DEMO'),
+  );
+
+  return ok(res, summary, {
+    meta: {
+      containsDemoData: anyDemo,
+      warning: anyDemo
+        ? 'Some rows are PLACEHOLDER_DEMO seed data, not an authoritative government source.'
+        : undefined,
     },
   });
 });

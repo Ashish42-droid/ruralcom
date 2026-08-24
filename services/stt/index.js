@@ -16,6 +16,7 @@
  */
 import logger from '../../config/logger.js';
 import { BhashiniAdapter, GoogleSttAdapter } from './adapters.js';
+import { GroqWhisperAdapter } from './groqWhisper.js';
 import { SUPPORTED_LANGUAGES, UnsupportedLanguageError } from './SttProvider.js';
 
 export class AllProvidersFailedError extends Error {
@@ -123,9 +124,37 @@ export class SttService {
   }
 }
 
-/** Default chain: Bhashini primary, Google fallback. */
-export function createSttService() {
-  return new SttService([new BhashiniAdapter(), new GoogleSttAdapter()]);
+/**
+ * Builds the provider chain from configuration.
+ *
+ * Groq Whisper leads because it is the only one actually implemented and
+ * needs no credentials beyond the GROQ_API_KEY already in use. Bhashini
+ * and Google remain in the chain as stubs: when either is given
+ * credentials it will be tried in turn, and until then they simply fail
+ * over immediately.
+ *
+ * Returns null when nothing is configured, which the intake layer reads as
+ * "voice unavailable" and reports honestly rather than silently storing an
+ * untranscribed entry.
+ */
+export function createSttService(env = process.env) {
+  const providers = [];
+
+  if (env.GROQ_API_KEY) {
+    providers.push(
+      new GroqWhisperAdapter({
+        apiKey: env.GROQ_API_KEY,
+        modelId: env.GROQ_WHISPER_MODEL_ID || undefined,
+      }),
+    );
+  }
+
+  // Stubs — included so a credentialed provider is picked up automatically.
+  if (env.BHASHINI_API_KEY) providers.push(new BhashiniAdapter());
+  if (env.GOOGLE_PROJECT_ID) providers.push(new GoogleSttAdapter());
+
+  if (!providers.length) return null;
+  return new SttService(providers);
 }
 
 export { SUPPORTED_LANGUAGES };

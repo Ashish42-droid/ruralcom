@@ -1006,3 +1006,87 @@ suite now exits cleanly with no `--forceExit`.
 Shutdown order in `server.js` is now sockets → queue → pool: stop accepting
 new realtime work, let an in-flight tolerance expiry finish, then drop the
 database connection it needed.
+
+---
+
+## D-050 — Voice intake: Groq Whisper, no new credentials
+Owner asked for "any free tier alternative" for STT. Groq already serves
+**whisper-large-v3**, and it covers all four demo languages — so voice
+intake now works on the `GROQ_API_KEY` already configured for the
+assessment layer. No new account, no new credential, no new cost.
+
+Bhashini and Google remain in the chain as stubs. `createSttService()` is
+now config-driven: a provider is only added once it actually has
+credentials, so an unconfigured stub never sits in the chain failing on
+every request purely to be skipped.
+
+**The hallucination guard is the point of this adapter.** Whisper invents
+fluent, plausible text when given silence or noise. Everywhere else that is
+a curiosity; here the output becomes a patient's SYMPTOM DESCRIPTION and
+feeds the triage engine, so an invented "chest pain" would escalate a well
+patient and an invented mild complaint would bury a real one.
+
+Two guards, both from the model's own signals, which is why the adapter
+requests `verbose_json` rather than the simpler response format:
+- `no_speech_prob > 0.6` → **reject outright**. Verified against the live
+  API with a pure 440Hz tone: it returns `no_speech_prob 0.977` alongside a
+  confidently wrong Hindi word. The **worst** segment decides, not the
+  average — one hallucinated stretch in an otherwise clean recording is
+  still a fabricated symptom.
+- `avg_logprob` → a real confidence score. Below 0.5 the transcript is
+  **returned but flagged** `needsHumanConfirmation`, so the health worker
+  reads it back to the patient rather than the system either trusting it
+  silently or discarding real speech.
+
+A response with no segments is treated as untrustworthy rather than
+defaulting to a reassuring confidence.
+
+---
+
+## D-051 — Kanpur demo data: explicitly generated, explicitly fake
+Owner explicitly authorised generating Indian-origin demo data for Kanpur,
+lifting the standing "never fabricate realistic-looking real-world data"
+rule for this specific purpose. Everything is written with
+`data_source = 'PLACEHOLDER_DEMO'` and the admin API surfaces a
+`containsDemoData` flag plus a warning string.
+
+**What is real:** the geography. Uttar Pradesh, Kanpur Nagar / Kanpur Dehat
+/ Unnao, and the block names are public administrative fact.
+
+**What is deliberately not real, and why:**
+- **Every doctor is fictional.** 30 of them, 10 per district, built from
+  common UP given names and surnames so the roster reads plausibly to the
+  audience without naming any real practitioner. Every registration number
+  is `DEMO-` prefixed so it cannot be mistaken for a real UP Medical
+  Council number.
+- **Every phone number is `+91-00000-xxxxx`.** Indian mobile numbers begin
+  6–9, so a leading zero cannot route to any real subscriber. Generating
+  plausible-looking numbers would risk a live demo dialling a stranger —
+  the one failure mode of fake data that reaches outside the system.
+- **Facility names** are generic or block-named; coordinates are district
+  centroids, good enough to demonstrate nearest-hospital matching and
+  nothing more.
+- **Availability is 2/3, not all**, so load balancing has something to
+  balance and "no doctor available" is also reachable on stage.
+
+The roster is **deterministic**: re-running the seed produces the same
+names, so a demo script that says "Dr Aarti Sharma will take this call"
+stays true between runs.
+
+`SEED_DEMO_PASSWORD` has **no default**. These accounts can read patient
+records, and a weak shared password must not become bakeable into a public
+repository by omission.
+
+---
+
+## D-052 — Orphaned test data found and cleaned
+Verifying the seed surfaced three `E2E District …` rows and a `SMOKE-…`
+district left behind by test runs that crashed before their teardown. They
+were harmless but would have appeared in the admin console's district list
+during a demo, which is exactly the kind of detail that undermines a
+polished presentation.
+
+Cleaned by targeting the fixtures' own naming, nothing else. Worth noting
+the general lesson: fixtures that clean up in `finally` still leak when the
+process is killed, so a periodic check for test-shaped rows is worth
+keeping as a habit before any demo.
