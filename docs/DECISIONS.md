@@ -1090,3 +1090,89 @@ Cleaned by targeting the fixtures' own naming, nothing else. Worth noting
 the general lesson: fixtures that clean up in `finally` still leak when the
 process is killed, so a periodic check for test-shaped rows is worth
 keeping as a habit before any demo.
+
+---
+
+## D-053 — Referral ranking: capability and beds outrank proximity
+The obvious implementation sorts hospitals by distance. That is wrong here.
+
+`rankHospitals()` orders by **free bed → emergency capability → distance**,
+deliberately in that order. The nearest hospital that cannot admit the
+patient is not a destination, it is a wasted journey — and in a
+time-critical transfer from a village health centre that is the costliest
+possible mistake.
+
+Hospitals with **no free beds are still returned**, ranked last and
+flagged, rather than filtered out. When everything nearby is full the
+assistant needs to see that and telephone ahead, not be handed an empty
+list with no explanation.
+
+A district hospital survives the capability filter even with its emergency
+flag unset: it is the referral destination of last resort and must not
+disappear from the list because of a missing data flag.
+
+Search covers the whole **state**, not just the district. The nearest
+capable hospital is frequently across a district line, and excluding it for
+an administrative reason means nothing to a patient in an ambulance.
+
+---
+
+## D-054 — Two honesty constraints the referral flow is built around
+**Distance is straight-line, never presented as travel distance.** Every
+distance carries `distanceBasis: 'straight_line'`, the API response carries
+a plain-language notice, and a `DISTANCE_IS_APPROXIMATE` warning is
+attached to every referral. In rural terrain haversine and road distance
+diverge sharply — a river with no nearby bridge is the ordinary case, not
+the exception. Showing "12 km" to someone deciding whether to move a
+critical patient, when the road is 40 km, would be actively dangerous.
+
+**Bed counts go stale, and the record says so.** Capacity is snapshotted at
+referral time along with `capacity_age_seconds` — how old the figures
+already were. A referral made against a three-day-old count is a different
+clinical act from one made against live data. A live join would have
+silently rewritten history: "we sent you to a hospital showing 8 free beds"
+must stay verifiable afterwards. Contact and location are snapshotted for
+the same reason — if an admin later corrects a phone number, the slip the
+patient was handed still says what it said.
+
+Referrals against `PLACEHOLDER_DEMO` capacity emit a **critical** warning
+saying so in as many words. Seeded bed counts must never be mistaken for a
+live feed during a demo in front of clinicians.
+
+**A bug this caught:** `Number(null)` is `0`, so a facility with missing
+coordinates was being placed at (0,0) — off the coast of Africa — and would
+have rendered "9045 km away" on a referral screen instead of an honest
+"distance unknown". Fixed with an explicit nullish coordinate helper in
+both `rankHospitals` and `findHospitals`.
+
+---
+
+## D-055 — It is a referral document, not a bill
+The spec says "generate and print a bill". The table is
+`referral_documents`, not `bills`, because at a government PHC or CHC the
+printed slip is primarily a **referral note** — care is frequently free or
+subsidised, and assuming payment is due would be wrong for the actual
+setting.
+
+The schema supports line items and a total, but **defaults to zero** and
+carries `charge_source = 'PLACEHOLDER_DEMO'` with a `chargesAreProvisional`
+flag on every API response. Real charge schedules are set by state health
+policy; nothing here is an authoritative fee, and the UI must not present
+placeholder amounts as payable.
+
+> **NEEDS OWNER INPUT:** if the demo should show non-zero charges, supply a
+> real or explicitly-fictional charge schedule. Inventing plausible medical
+> fees unprompted is exactly the "realistic-looking fabricated data" the
+> project rules forbid.
+
+**Danger-zone mechanics** work as the spec describes: the HIGH-tier state
+stays active while a referral exists with an unprinted document, and clears
+on `POST /referrals/documents/:id/printed`. Marking printed is the ONLY
+client-writable field on the document — destination, charges and snapshot
+are immutable once the slip is in a patient's hand.
+
+Verified end to end against the seeded Kanpur data with a real assistant
+login: SpO2 88 / BP 86/58 / HR 132 plus crushing chest pain produced
+`rule=high, model=high, final=high` on five rule hits, ranked Bilhaur CHC
+first at 0.63 km with 9 free beds, issued the referral with a demo-data
+warning, and the danger zone went active → cleared on print.

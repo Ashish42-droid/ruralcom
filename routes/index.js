@@ -16,6 +16,7 @@ import videoRoutes from './video.routes.js';
 import assessmentRoutes from './assessment.routes.js';
 import consultationRoutes from './consultation.routes.js';
 import notificationRoutes from './notification.routes.js';
+import referralRoutes from './referral.routes.js';
 
 const router = Router();
 
@@ -27,6 +28,7 @@ router.use('/intake', intakeRoutes);
 router.use('/clinical', assessmentRoutes);
 router.use('/consultations', consultationRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/referrals', referralRoutes);
 router.use('/video', videoRoutes);
 
 // Mounted in later phases:
