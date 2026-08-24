@@ -16,6 +16,7 @@ import { pingSupabase } from './config/supabase.js';
 import { pingRedis, isRedisConfigured } from './config/redis.js';
 import { startToleranceWorker, closeConsultationQueue } from './jobs/consultationQueue.js';
 import { initSockets, closeSockets } from './sockets/index.js';
+import { shutdownOcr } from './services/ocr/index.js';
 import { handleToleranceExpiry } from './services/consultation.service.js';
 
 const server = http.createServer(app);
@@ -98,6 +99,13 @@ async function shutdown(signal) {
       logger.info('Consultation queue closed');
     } catch (queueErr) {
       logger.error({ err: queueErr }, 'Error closing consultation queue');
+    }
+
+    try {
+      await shutdownOcr();
+      logger.info('OCR worker terminated');
+    } catch (ocrErr) {
+      logger.error({ err: ocrErr }, 'Error terminating the OCR worker');
     }
 
     try {

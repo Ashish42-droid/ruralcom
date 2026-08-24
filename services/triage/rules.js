@@ -74,6 +74,31 @@ const HIGH_RISK_PHRASES = [
   { match: /poison|overdose|snake ?bite/i, label: 'toxic_exposure' },
 ];
 
+/**
+ * Critical laboratory values.
+ *
+ * Matched against the text `services/ocr/labParser.js` produces via
+ * `toTriageText()`, so an abnormal lab escalates DETERMINISTICALLY rather
+ * than depending on the model noticing it.
+ *
+ * This gap was found in testing: a patient with entirely normal vitals and
+ * mild symptoms, but haemoglobin 6.1 and platelets 88000, was escalated
+ * only because the LLM happened to catch it. With the model unavailable
+ * the same case would have failed safe to MEDIUM — safe, but wrong, and
+ * for a reason that had nothing to do with the patient.
+ *
+ * >>> THRESHOLDS UNVALIDATED — same status as the vitals thresholds. <<<
+ */
+const CRITICAL_LAB_PHRASES = [
+  { match: /haemoglobin critically low/i, label: 'lab_severe_anaemia' },
+  { match: /platelet count critically low/i, label: 'lab_severe_thrombocytopenia' },
+  { match: /blood glucose critically (low|high)/i, label: 'lab_glucose_critical' },
+  { match: /white cell count critically/i, label: 'lab_wbc_critical' },
+];
+
+/** Abnormal-but-not-critical labs still warrant a doctor. */
+const ABNORMAL_LAB_PHRASE = /\b(haemoglobin|platelet count|blood glucose|white cell count|creatinine|blood urea|total bilirubin) (low|high) at\b/i;
+
 const MEDIUM_RISK_PHRASES = [
   { match: /persistent vomiting|vomiting everything/i, label: 'persistent_vomiting' },
   { match: /blood in (stool|urine|vomit|sputum)/i, label: 'occult_bleeding' },
@@ -204,6 +229,19 @@ export function evaluateRules(input = {}) {
   }
   for (const phrase of MEDIUM_RISK_PHRASES) {
     if (phrase.match.test(text)) flag(TIER.MEDIUM, phrase.label, { source: 'protocol' });
+  }
+
+  // ---- Laboratory values ----------------------------------------------
+  // Deterministic, so an abnormal lab escalates whether or not a model is
+  // available to notice it.
+  for (const lab of CRITICAL_LAB_PHRASES) {
+    if (lab.match.test(text)) {
+      flag(TIER.HIGH, lab.label, { source: 'lab' });
+    }
+  }
+
+  if (ABNORMAL_LAB_PHRASE.test(text)) {
+    flag(TIER.MEDIUM, 'lab_abnormal', { source: 'lab' });
   }
 
   // ---- Missing data is NOT normal data --------------------------------

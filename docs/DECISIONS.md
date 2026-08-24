@@ -1176,3 +1176,104 @@ login: SpO2 88 / BP 86/58 / HR 132 plus crushing chest pain produced
 `rule=high, model=high, final=high` on five rule hits, ranked Bilhaur CHC
 first at 0.63 km with 9 free beds, issued the referral with a demo-data
 warning, and the danger zone went active → cleared on print.
+
+---
+
+## D-056 — Standing instruction: assume and fill in, flag one exception
+Owner instruction: where information is missing, assume it or use clearly
+marked placeholder data rather than stopping to ask; real values follow
+later.
+
+Adopted. One narrow carve-out remains, and it is a judgement about
+consequence rather than a rule: **drug names and dosages.** A fabricated
+formulary that *looks* functional is the single category of placeholder a
+health worker could act on directly, and the harm lands on a patient. That
+one stays flagged rather than invented. Everything else — charge
+schedules, rosters, facility data, reference ranges — is filled in and
+marked for replacement.
+
+---
+
+## D-057 — OCR: Tesseract, because there is no vision model on this key
+Checked Groq's live model list before choosing: it serves text and Whisper
+but no vision model. Rather than ask for another credential, OCR runs on
+**Tesseract locally** — free, offline, no key. Verified at **93%
+confidence** extracting a full lab panel from a rendered report, and 94% on
+the same path end to end through the API.
+
+Handwritten prescriptions remain the known weak case; a vision-model
+adapter drops in behind the same interface when a credential exists. PDFs
+are marked `failed` explicitly rather than left `pending` forever, so the
+queue does not silently accumulate work nothing will ever process.
+
+**OCR output never auto-populates a clinical field.** Every result is
+written with `needs_human_review = true`, unconditionally, and the
+`ocr_*` columns are not client-writable. Below 60% confidence the text is
+stored but flagged unusable rather than quietly offered as data — an OCR
+error that enters a wrong drug name into an interaction check, or slips a
+decimal in a lab value, is a patient-safety event.
+
+Recognition runs in the background after upload, not inline: a health
+worker should not be held at a spinner for several seconds.
+
+---
+
+## D-058 — Lab parsing is arithmetic, and a model is not invited
+`services/ocr/labParser.js` extracts analytes, values, units and reference
+ranges, then compares them. A haemoglobin of 7.2 against 13.0–17.0 is
+anaemia by subtraction; nothing is inferred and no model gets the chance to
+disagree. Only the OCR step can be wrong, and it is the only step carrying
+a confidence score.
+
+Two details that matter more than they look:
+- **Reference ranges are taken from the report itself** wherever the lab
+  printed them, falling back to a table only when absent. Ranges are
+  analyser- and population-specific, so the lab's own range beats anything
+  we could hold.
+- **The first number after the analyte name is the result.** On a typical
+  report the layout is `Analyte  value  unit  (low - high)`, so taking the
+  wrong one reports a patient's haemoglobin as 13.0 when it is 7.2 —
+  turning severe anaemia into a normal result. Tested explicitly.
+
+---
+
+## D-059 — The end-to-end test exposed a real gap in the rule layer
+Running the full OCR path produced this:
+
+    rule=low   model=high   FINAL=high
+    rule hits: (none)
+
+Haemoglobin 6.1 with platelets 88000 is severe pancytopenia, and **only the
+LLM caught it**. Vitals were entirely normal, so the deterministic layer saw
+nothing. With Groq unavailable the same patient would have failed safe to
+MEDIUM — safe, but wrong, and for a reason having nothing to do with them.
+
+That contradicts the system's central claim: rules set the floor, the model
+may only raise it. Fixed by adding deterministic lab red-flag rules matched
+against the text `toTriageText()` produces, so an abnormal lab escalates
+whether or not a model is available. Re-verified end to end: `rule=high`
+with hits `lab_severe_anaemia, lab_abnormal`.
+
+Feeding labs through the existing symptom text was deliberate — a second,
+parallel escalation path would drift out of step with the first.
+
+---
+
+## D-060 — A backspace character masquerading as a word boundary
+The lab rule silently never fired, and the reason is worth recording.
+
+Editing `rules.js` through a bash→Python→JS chain collapsed the two
+characters `\b` into a **single literal backspace control character**
+(code 8). The regex became `/\x08(...)\x08/i`, which cannot match any real
+text.
+
+It resisted diagnosis for an unusual reason: `JSON.stringify` renders a
+backspace character *as* `\b`, so every inspection — reading the file,
+printing the regex, grepping — displayed exactly what was expected. It only
+surfaced when dumping raw code points.
+
+Two lessons applied: regex-bearing code is edited with a real editor tool
+rather than through nested string escaping, and a "verify the regex in
+isolation" check must use the same bytes as the file, not a retyped copy
+(the retyped version dropped the backslashes and passed, which actively
+misled the diagnosis).

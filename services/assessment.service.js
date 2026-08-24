@@ -18,6 +18,8 @@ import { supabaseAsUser, supabaseAdmin } from '../config/supabase.js';
 import { runAssessment } from './triage/engine.js';
 import { createLlmService } from './llm/index.js';
 import { toEngineVitals } from './vitals.service.js';
+import { labResultsForVisit } from './ocr/index.js';
+import { toTriageText } from './ocr/labParser.js';
 import { recordAudit } from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../config/logger.js';
@@ -88,11 +90,20 @@ async function gatherInput({ accessToken, visitId }) {
     ageYears = Math.floor(ms / (365.25 * 24 * 60 * 60 * 1000));
   }
 
+  // Abnormal lab values join the symptom text so the deterministic rule
+  // layer sees them. Deliberately NOT a separate escalation path: one
+  // place decides tiers, and a second would drift out of step with it.
+  const labs = await labResultsForVisit(visitId);
+  const labText = toTriageText(labs);
+
   const symptoms = symptomsRes.data ?? [];
   // Prefer normalised English text where the translation layer has produced
   // it; the rule layer's red-flag phrases are matched against English.
-  const symptomText = symptoms
-    .map((s) => s.normalized_text || s.raw_text)
+  const symptomText = [
+    symptoms.map((s) => s.normalized_text || s.raw_text).join('. '),
+    labText,
+  ]
+    .filter(Boolean)
     .join('. ')
     .trim();
 
@@ -114,6 +125,8 @@ async function gatherInput({ accessToken, visitId }) {
     counts: {
       symptomEntries: symptoms.length,
       hasVitals: Boolean(vitalsRes.data),
+      labResults: labs.results.length,
+      abnormalLabs: labs.abnormalCount,
     },
   };
 }
@@ -235,6 +248,8 @@ export async function assessVisit({ actor, accessToken, visitId, req }) {
       ruleHitCodes: result.ruleHits.map((h) => h.code),
       hadVitals: counts.hasVitals,
       symptomEntries: counts.symptomEntries,
+      labResults: counts.labResults,
+      abnormalLabs: counts.abnormalLabs,
     },
     // A model trying to de-escalate below the rule floor is the one signal
     // that matters most in aggregate.

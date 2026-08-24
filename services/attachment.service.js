@@ -15,6 +15,7 @@ import { recordAudit } from './audit.service.js';
 import { validateUpload } from '../utils/fileSignature.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../config/logger.js';
+import { processAttachment } from './ocr/index.js';
 
 /** Signed URLs are short-lived: a leaked link should expire before it travels. */
 const SIGNED_URL_TTL_SECONDS = 300;
@@ -205,6 +206,18 @@ export async function uploadAttachments({
       code: 'UPLOAD_REJECTED',
       details: rejected,
     });
+  }
+
+  // Kick OCR off in the background for document types that need it. Not
+  // awaited: recognition takes seconds and a health worker should not be
+  // held at a spinner while it runs. Results land on the attachment row
+  // and the client polls or re-fetches.
+  for (const attachment of uploaded) {
+    if (attachment.ocrStatus === 'pending') {
+      processAttachment(attachment.id).catch((err) =>
+        logger.error({ err, attachmentId: attachment.id }, 'Background OCR threw'),
+      );
+    }
   }
 
   return { batchId, uploaded, rejected };
