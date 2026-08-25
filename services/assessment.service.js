@@ -202,6 +202,61 @@ async function persist({ result, visit, actor }) {
   return assessment;
 }
 
+/**
+ * Persists the care plan as `ai_recommendations` rows.
+ *
+ * Every medication row carries its formulary id in `rule_source_id` — a
+ * database constraint rejects an unsourced one, which is what makes an
+ * invented drug suggestion structurally impossible to store.
+ *
+ * Deliberately NON-FATAL. The assessment and its tier stand on their own,
+ * and the plan is recomposed deterministically on read, so a failed write
+ * costs nothing but the stored copy. Failing the whole assessment here
+ * would turn a bookkeeping problem into a clinical one.
+ */
+async function persistCarePlan(assessmentId, plan) {
+  const rows = [];
+  let order = 0;
+
+  for (const step of plan.firstAid.steps) {
+    rows.push({
+      assessment_id: assessmentId, type: 'first_aid',
+      display_order: order++, content: step,
+    });
+  }
+
+  for (const med of plan.medications) {
+    rows.push({
+      assessment_id: assessmentId, type: 'medication', display_order: order++,
+      content:
+        `${med.drug} — ${med.dose}, ${med.frequency}` +
+        `${med.maxDaily ? ` (max ${med.maxDaily})` : ''}`,
+      rule_source_id: med.ruleSourceId,
+    });
+  }
+
+  for (const point of plan.precautions) {
+    rows.push({
+      assessment_id: assessmentId, type: 'precaution',
+      display_order: order++, content: point,
+    });
+  }
+
+  for (const point of plan.diet) {
+    rows.push({
+      assessment_id: assessmentId, type: 'diet',
+      display_order: order++, content: point,
+    });
+  }
+
+  if (!rows.length) return;
+
+  const { error } = await supabaseAdmin.from('ai_recommendations').insert(rows);
+  if (error) {
+    logger.error({ err: error, assessmentId }, 'Care plan persistence failed');
+  }
+}
+
 /** Maps the visit to the status its tier implies. */
 function visitStatusForTier(tier) {
   if (tier === 'low') return 'awaiting_doctor_review';
