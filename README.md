@@ -50,6 +50,10 @@ Every deviation from the original brief: [`docs/DECISIONS.md`](docs/DECISIONS.md
 
 ---
 
+> **Resuming work, or picking this up fresh?** Start with
+> [`HANDOFF.md`](HANDOFF.md) — how to run it, what is blocking, the
+> invariants not to break, and the known gaps.
+
 ## Quick start
 
 ```bash
