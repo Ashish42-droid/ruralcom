@@ -1,0 +1,247 @@
+/*
+ * RuralAI design tokens.
+ *
+ * Two constraints drove every decision here, and they pull against the
+ * usual "make it look premium" instincts:
+ *
+ *   1. A cheap Android tablet in DIRECT SUNLIGHT. That rules out soft
+ *      shadows, low-contrast surfaces and subtle greys — the neumorphic
+ *      direction the design search suggested is unusable outdoors. Every
+ *      surface here is separated by a visible border, not a shadow.
+ *   2. A health worker wearing GLOVES. Touch targets are 56px, not the
+ *      44px baseline, and spacing between them is generous. A mis-tap on a
+ *      clinical screen is not a cosmetic problem.
+ *
+ * Type is Atkinson Hyperlegible throughout — it was designed for low
+ * vision and its letterforms stay distinguishable at small sizes and in
+ * glare.
+ */
+
+:root {
+  /* Deep, saturated ground — reads as "clinical instrument", not "app". */
+  --bg: #0a1120;
+  --bg-2: #0e1728;
+  --panel: #141f33;
+  --panel-2: #1b2942;
+  --line: #2a3d5c;
+  --line-bright: #3d5580;
+
+  --text: #f2f6fc;
+  --text-2: #a9bdd9;
+  --muted: #7e94b5;
+
+  /* Cyan primary, from the health palette. High contrast on the dark ground. */
+  --accent: #22d3ee;
+  --accent-ink: #04141c;
+  --accent-2: #0891b2;
+
+  /* Tier colours. Deliberately far apart in hue AND lightness, so they are
+     still distinguishable with colour vision deficiency and in glare. */
+  --low: #34d399;
+  --low-bg: rgba(52, 211, 153, 0.12);
+  --medium: #fbbf24;
+  --medium-bg: rgba(251, 191, 36, 0.12);
+  --high: #fb5d70;
+  --high-bg: rgba(251, 93, 112, 0.14);
+
+  --radius: 16px;
+  --radius-sm: 11px;
+
+  /* Density 6/10 — standard. Tight enough for a dashboard, loose enough
+     for gloves. */
+  --sp-1: 6px;
+  --sp-2: 12px;
+  --sp-3: 18px;
+  --sp-4: 26px;
+  --sp-5: 40px;
+  --sp-6: 64px;
+
+  /* Gloves: 56px, well above the 44px minimum. */
+  --touch: 56px;
+
+  --font: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  /* Notched phones. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+h1, h2, h3, h4 { line-height: 1.2; margin: 0; font-weight: 700; }
+p { margin: 0; }
+
+/* Focus must never be removed — keyboard users and screen-reader users
+   both depend on it, and it costs sighted users nothing. */
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* ── Surfaces ─────────────────────────────────────────────────────── */
+.card {
+  background: var(--panel);
+  /* A visible border, not a shadow: shadows vanish in sunlight. */
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--sp-3);
+}
+.card + .card { margin-top: var(--sp-3); }
+
+.card-title { font-size: 18px; margin-bottom: 4px; }
+.card-sub { color: var(--text-2); font-size: 14px; margin-bottom: var(--sp-3); }
+
+/* ── Controls ─────────────────────────────────────────────────────── */
+.btn {
+  min-height: var(--touch);
+  padding: 0 var(--sp-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: background 160ms ease, transform 160ms ease;
+}
+.btn:hover:not(:disabled) { background: #4ee0f5; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.42; cursor: not-allowed; }
+
+.btn.ghost {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--line-bright);
+  font-weight: 400;
+}
+.btn.ghost:hover:not(:disabled) { background: var(--panel-2); border-color: var(--accent); }
+
+.btn.danger { background: var(--high); color: #24060b; }
+.btn.danger:hover:not(:disabled) { background: #ff7c8c; }
+
+.btn.block { width: 100%; }
+
+label {
+  display: block;
+  font-size: 13px;
+  color: var(--text-2);
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+input, select, textarea {
+  width: 100%;
+  min-height: var(--touch);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-bright);
+  background: var(--bg-2);
+  color: var(--text);
+}
+input:hover, select:hover, textarea:hover { border-color: var(--accent-2); }
+textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+
+/* ── Layout ───────────────────────────────────────────────────────── */
+.wrap { max-width: 1240px; margin: 0 auto; padding: var(--sp-3); }
+.row { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.col { display: flex; flex-direction: column; gap: var(--sp-2); }
+.grid { display: grid; gap: var(--sp-3); }
+.grid.two { grid-template-columns: 1fr; }
+.grid.auto { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); }
+@media (min-width: 900px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 13px; }
+.small { font-size: 13px; }
+
+/* ── Tier badges ──────────────────────────────────────────────────── */
+.tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.4px;
+  border: 1.5px solid currentColor;
+}
+.tier.low { color: var(--low); background: var(--low-bg); }
+.tier.medium { color: var(--medium); background: var(--medium-bg); }
+.tier.high { color: var(--high); background: var(--high-bg); }
+.tier .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+
+/* ── Banners ──────────────────────────────────────────────────────── */
+.banner {
+  padding: 13px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  border: 1px solid;
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+}
+.banner.info { background: rgba(34, 211, 238, 0.09); border-color: rgba(34, 211, 238, 0.32); color: #a5eefb; }
+.banner.warn { background: var(--medium-bg); border-color: rgba(251, 191, 36, 0.36); color: #ffe0a3; }
+.banner.err { background: var(--high-bg); border-color: rgba(251, 93, 112, 0.4); color: #ffc2c9; }
+
+/* ── Danger zone: HIGH-tier full-screen state ─────────────────────── */
+body.danger {
+  --bg: #1c0610;
+  --panel: #2a0c18;
+  --panel-2: #350f1e;
+  --line: #5e1b2e;
+  --line-bright: #83263f;
+  background: var(--bg);
+}
+
+/* ── Key/value rows ───────────────────────────────────────────────── */
+.kv {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 14.5px;
+}
+.kv:last-child { border-bottom: 0; }
+.kv > span:first-child { color: var(--text-2); }
+.kv > span:last-child { text-align: right; font-weight: 700; }
+
+/* ── Scroll containers ────────────────────────────────────────────── */
+.scroll { overflow: auto; -webkit-overflow-scrolling: touch; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 11px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--text-2); font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; }
+
+/*
+ * Honour the OS reduced-motion setting. Anyone who has asked their device
+ * to stop animating has a reason — vestibular disorder, migraine, or
+ * simply a slow device.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

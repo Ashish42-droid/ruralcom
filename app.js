@@ -75,6 +75,11 @@ app.use('/api/v1', apiRoutes);
 // Demo UI. Served from the API so there is one origin, one process and no
 // CORS to configure for the demo — see docs/DECISIONS.md D-061.
 const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
+
+// The React app is the UI. public/simple.html is kept as a zero-dependency
+// fallback: if a build ever breaks on demo day, it still talks to the same
+// API with no bundler involved.
+app.get('/', (req, res) => res.redirect('/app/'));
 app.use(express.static(publicDir, { index: 'index.html' }));
 
 app.use(notFound);

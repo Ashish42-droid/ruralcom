@@ -1391,3 +1391,53 @@ down, which takes patient data with it.
 Recorded here because the symptom — a server that starts fine and a UI that
 loads fine, but every clinical call failing — points nowhere near a
 credential by itself.
+
+---
+
+## D-065 — Frontend rebuilt: React + Framer Motion + React Three Fiber
+Owner asked for an interactive, animated, 3D frontend using the design
+skills. `web/` is now a real Vite + React app, built into `public/app/` and
+served by the same Express process — one origin, one command.
+
+**I rejected the design tool's primary recommendation.** It proposed
+**neumorphism** with a light palette; its own metadata flags that style
+`accessibility risk: high`. Soft low-contrast shadows are precisely wrong
+for the actual context — a gloved health worker reading a cheap tablet in
+direct sunlight. Every surface here is separated by a **visible border**,
+not a shadow, because shadows vanish in glare.
+
+What I did take from it:
+- **Atkinson Hyperlegible** throughout. Designed for low vision; its
+  letterforms stay distinguishable at small sizes and in glare. A genuinely
+  good fit that I would not have reached for unprompted.
+- **No emoji as icons.** The previous demo used 📁 and 📷; emoji render
+  inconsistently across Android versions and screen readers announce their
+  literal name. Replaced with inline SVG.
+- Reduced-motion support, visible focus rings, 4.5:1 contrast.
+
+**Touch targets are 56px, not the 44px baseline.** The user wears gloves. A
+mis-tap on a clinical screen is not a cosmetic problem. Verified in-browser:
+zero interactive elements below the minimum, at both desktop and 375px.
+
+**3D is deliberately restrained** — slow ambient drift, no spin, no bloom,
+no camera moves. Restraint reads as expensive; spectacle reads as a student
+project, and this is going in front of a government audience.
+
+**Performance was treated as a hard constraint, not a nicety.** three.js is
+956 KB, so `Hero3D` is lazy-loaded behind Suspense and split into its own
+chunk — the critical path is ~53 KB gzipped (app + motion + CSS). DPR is
+capped at 1.5, because a tablet's 3× ratio renders 9× the pixels for no
+visible gain. Reduced motion or absent WebGL falls back to a static
+gradient. A landing page that stutters on the venue projector is worse than
+one with no 3D at all.
+
+`public/simple.html` is kept as a zero-dependency fallback: if a build ever
+breaks on demo day, it still drives the same API with no bundler involved.
+
+**Lint discipline:** four warnings were genuine (a cascading render from
+syncing tab state in an effect, unused imports) and were fixed properly
+rather than suppressed — the tab is now derived during render. Two were
+false positives (`only-export-components` cannot tell that the `Icon*`
+exports are components produced by a factory; `set-state-in-effect` cannot
+see that `load({initial:true})` skips its only synchronous setState) and
+are suppressed with the reasoning recorded inline.

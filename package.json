@@ -20,7 +20,11 @@
     "llm:check": "node --env-file=.env scripts/llm-smoke.js",
     "livekit:check": "node --env-file=.env scripts/livekit-smoke.js",
     "assessment:check": "node --env-file=.env scripts/assessment-smoke.js",
-    "seed:demo": "node --env-file=.env scripts/seed-demo.js"
+    "seed:demo": "node --env-file=.env scripts/seed-demo.js",
+    "web:install": "npm --prefix web install",
+    "web:build": "npm --prefix web run build",
+    "web:dev": "npm --prefix web run dev",
+    "demo": "npm run web:build && npm start"
   },
   "dependencies": {
     "@socket.io/redis-adapter": "^8.3.0",
