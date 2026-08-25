@@ -1313,3 +1313,81 @@ symptoms, run a live assessment (**HIGH**), see the danger-zone state
 activate, rank four hospitals, issue a referral to Bilhaur CHC at 0.63 km
 with 9/30 beds, and watch the danger zone clear on print. Every call
 returned 200/201.
+
+---
+
+## D-062 — Care plan composer: the medication carve-out, revisited
+I had been withholding the medication output as my one standing carve-out
+(D-056). Re-reading §3.6 of the brief, that was wrong — tiered care output
+including medication is a core requirement, not an optional extra.
+
+The resolution is not to fabricate dosing. `services/careplan/formulary.js`
+uses **real, published OTC dosing** — WHO IMCI, WHO/UNICEF ORS and zinc
+guidance, India's NLEM — with the source cited on every entry. Nothing is
+invented. What remains missing is not the numbers but the sign-off: "these
+doses are standard" is not "a clinician has confirmed THIS SYSTEM applies
+them correctly to THIS population", and only the second makes them safe to
+act on. So the table is stamped `unvalidated`, every suggestion is marked
+`pending_doctor_review`, and the UI never presents one as an instruction.
+
+**The gates suppress rather than warn.** A failed gate removes the
+suggestion entirely and records why:
+- **No weight for a weight-based paediatric dose → refused.** Guessing a
+  paediatric paracetamol dose from an age band is the classic paediatric
+  overdose. With a weight, the dose is computed and shown with its working
+  (`240 mg = 15 mg/kg × 16 kg`).
+- **No age → nothing at all is suggested.** Without age no dosing rule can
+  be checked.
+- Recorded allergy, contraindicating history, pregnancy, and age-band
+  limits each suppress independently.
+
+Suppressed entries are returned with their reasons, so the assistant sees
+*why* nothing was offered rather than an unexplained empty list.
+
+Tier scope holds to D-003: medication is **LOW only**. MEDIUM produces a
+doctor-issued prescription after the video call; HIGH produces a referral
+and explicitly instructs the assistant not to medicate. First aid and
+precautions are produced for **every** tier — the assistant acts now,
+whatever happens next.
+
+First-aid protocols are ordered most-specific-first, so crushing chest pain
+gets the cardiac protocol rather than generic care, and a snakebite gets
+"do NOT cut, suck, or apply ice" rather than wound dressing.
+
+---
+
+## D-063 — Demo UI: multi-file, all document types, camera and file manager
+Per §3.7, every intake type accepts **single and multiple files, from the
+file manager or the camera**. The UI now has three document types
+(prescription, lab report, wound image), a staging queue that accumulates
+across pickers — so a health worker can photograph a prescription, add a
+lab report, then a wound image, and send the batch in one call — and
+per-file removal before upload.
+
+Camera capture uses `capture="environment"` on a separate input, which is
+what actually opens the rear camera on Android and iOS; the file-manager
+input omits it. Both post to the same endpoint, differing only in recorded
+provenance.
+
+Wound images skip OCR rather than being pushed through a text pipeline that
+has nothing to read.
+
+The layout is responsive at a 700px breakpoint: single column, full-width
+controls, horizontally scrollable tabs, and a three-across step indicator.
+
+---
+
+## D-064 — The database password changed mid-session
+`npm run db:check` began failing with Postgres `28P01`
+(`invalid_password`) on both the pooler and the direct host. It worked
+earlier in the same session — 507 tests passed against it — so the
+credential was rotated externally, most likely acting on the standing
+advice to rotate keys that had appeared in chat.
+
+Nothing else is affected: Supabase Auth, Groq, LiveKit and Redis all still
+authenticate, and the API still boots and serves the UI. Only Postgres is
+down, which takes patient data with it.
+
+Recorded here because the symptom — a server that starts fine and a UI that
+loads fine, but every clinical call failing — points nowhere near a
+credential by itself.

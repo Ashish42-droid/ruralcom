@@ -89,6 +89,43 @@
   .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.25);
     border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
   @keyframes sp{to{transform:rotate(360deg)}}
+
+  .upTabs{display:flex;gap:6px;flex-wrap:wrap}
+  .upTab{padding:7px 13px;border-radius:9px;border:1px solid var(--line);cursor:pointer;
+    font-size:13px;color:var(--muted)}
+  .upTab.on{background:var(--panel-2);color:var(--text);border-color:var(--accent)}
+  .qitem{display:flex;gap:10px;align-items:center;background:var(--panel-2);
+    border:1px solid var(--line);border-radius:9px;padding:8px 11px;font-size:13px}
+  .qitem .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .qitem .x{cursor:pointer;color:var(--muted);padding:0 4px}
+  .qitem .x:hover{color:var(--high)}
+  .cp h4{margin:18px 0 8px;font-size:13px;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.5px}
+  .cp h4:first-child{margin-top:0}
+  .cp ol,.cp ul{margin:0;padding-left:20px}
+  .cp li{margin-bottom:7px;font-size:14px}
+  .med{background:var(--panel-2);border:1px solid var(--line);border-left:3px solid var(--medium);
+    border-radius:9px;padding:11px 13px;margin-bottom:9px}
+  .med b{font-size:14px}
+  .med .d{font-family:ui-monospace,Consolas,monospace;font-size:13px;color:var(--accent);margin:4px 0}
+  .med small{color:var(--muted);display:block;margin-top:5px;font-size:12px}
+  .sup{background:rgba(255,77,94,.07);border:1px solid rgba(255,77,94,.25);
+    border-radius:9px;padding:9px 12px;margin-bottom:8px;font-size:13px}
+  .next{background:rgba(76,141,255,.1);border:1px solid rgba(76,141,255,.3);
+    border-radius:10px;padding:12px 14px;margin-top:16px}
+  @media(max-width:700px){
+    .wrap{padding:12px}
+    header{padding:12px 14px;gap:10px}
+    .brand span{display:none}
+    .card{padding:14px}
+    .steps{display:grid;grid-template-columns:repeat(3,1fr)}
+    .tabs{overflow-x:auto;flex-wrap:nowrap}
+    .tab{white-space:nowrap}
+    button{width:100%}
+    .row button{width:auto;flex:1;min-width:120px}
+    table{font-size:12.5px}
+    th,td{padding:7px 6px}
+  }
 </style>
 </head>
 <body>
@@ -205,12 +242,25 @@
           </div>
 
           <div class="card">
-            <h2>4 · Lab report <span class="muted" style="font-weight:400;font-size:13px">(optional)</span></h2>
-            <p class="sub">OCR runs in the background. Values are compared to reference ranges by arithmetic.</p>
-            <input type="file" id="labFile" accept="image/*" />
-            <button style="margin-top:12px" id="labBtn" disabled>Upload &amp; run OCR</button>
+            <h2>4 · Documents &amp; images</h2>
+            <p class="sub">Prescriptions, lab reports and wound photos. Multiple files at once,
+              from the file manager or straight from the camera.</p>
+            <div class="upTabs" id="upTabs">
+              <div class="upTab on" data-ut="prescription">Prescription</div>
+              <div class="upTab" data-ut="lab_report">Lab report</div>
+              <div class="upTab" data-ut="wound_image">Wound image</div>
+            </div>
+            <div class="row" style="margin-top:12px">
+              <button class="ghost" id="pickFiles">📁 Choose files</button>
+              <button class="ghost" id="pickCamera">📷 Camera</button>
+            </div>
+            <input type="file" id="fileInput" multiple accept="image/*,application/pdf" hidden />
+            <input type="file" id="camInput" accept="image/*" capture="environment" multiple hidden />
+            <div id="queue" class="list" style="margin-top:12px"></div>
+            <button style="margin-top:12px" id="upBtn" disabled>Upload &amp; run OCR</button>
             <div id="labResults" class="hidden" style="margin-top:14px"></div>
           </div>
+        </div>
         </div>
 
         <div>
@@ -219,6 +269,11 @@
             <p class="sub">Deterministic rules set the floor; the model may only raise it.</p>
             <button id="assessBtn" disabled>Run AI assessment</button>
             <div id="assessOut" class="hidden" style="margin-top:16px"></div>
+          </div>
+          <div class="card hidden" id="carePlanCard">
+            <h2>Care plan</h2>
+            <p class="sub">Deterministic protocols. Medication is a suggestion pending doctor review — never an instruction.</p>
+            <div id="carePlanOut"></div>
           </div>
           <div class="card" id="referralCard" style="display:none">
             <h2 style="color:var(--high)">6 · HIGH-tier referral</h2>
@@ -395,29 +450,85 @@ $('#sympBtn').onclick = async () => {
   }catch(e){} finally{ b.disabled=false; }
 };
 
-$('#labBtn').onclick = async () => {
-  const f=$('#labFile').files[0];
-  if(!f){ log('choose an image first','warn'); return; }
-  const b=$('#labBtn'); b.disabled=true; b.innerHTML='<span class="spin"></span> Uploading…';
-  try{
-    const fd=new FormData();
-    fd.append('files',f); fd.append('type','lab_report'); fd.append('captureSource','camera');
-    await api(`/intake/visits/${S.visitId}/attachments`,{method:'POST',form:fd});
-    b.innerHTML='<span class="spin"></span> Running OCR…';
-    log('OCR running in background…','warn');
-    let att=null;
-    for(let i=0;i<30;i++){
-      await new Promise(r=>setTimeout(r,2000));
-      const list=await api(`/intake/visits/${S.visitId}/attachments`);
-      att=list[0]; if(att.ocrStatus!=='pending') break;
+// ── Uploads: multiple files, any type, file manager or camera ──
+let upType = 'prescription';
+let queue = [];
+
+document.querySelectorAll('.upTab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('.upTab').forEach(x => x.classList.toggle('on', x === t));
+  upType = t.dataset.ut;
+});
+
+function renderQueue(){
+  const el = $('#queue');
+  el.innerHTML = queue.map((f,i) => `
+    <div class="qitem"><span>${f.type.startsWith('image')?'🖼':'📄'}</span>
+      <span class="grow">${f.name}</span>
+      <span class="muted">${(f.size/1024).toFixed(0)} KB</span>
+      <span class="x" data-i="${i}">✕</span></div>`).join('');
+  el.querySelectorAll('.x').forEach(x => x.onclick = () => {
+    queue.splice(+x.dataset.i,1); renderQueue();
+  });
+  $('#upBtn').disabled = queue.length === 0 || !S.visitId;
+  $('#upBtn').textContent = queue.length
+    ? `Upload ${queue.length} file${queue.length>1?'s':''} & run OCR`
+    : 'Upload & run OCR';
+}
+
+function addFiles(list){
+  // Appending rather than replacing lets a health worker photograph a
+  // prescription, then add a lab report, then a wound image, and send the
+  // lot in one batch.
+  for (const f of list) queue.push(f);
+  renderQueue();
+}
+$('#pickFiles').onclick = () => $('#fileInput').click();
+$('#pickCamera').onclick = () => $('#camInput').click();
+$('#fileInput').onchange = e => { addFiles(e.target.files); e.target.value=''; };
+$('#camInput').onchange  = e => { addFiles(e.target.files); e.target.value=''; };
+
+$('#upBtn').onclick = async () => {
+  if(!queue.length) return;
+  const b = $('#upBtn'); b.disabled = true;
+  b.innerHTML = '<span class="spin"></span> Uploading…';
+  try {
+    const fd = new FormData();
+    for (const f of queue) fd.append('files', f);
+    fd.append('type', upType);
+    // The camera path and the file-manager path hit the same endpoint;
+    // only the recorded provenance differs.
+    fd.append('captureSource', 'camera');
+    const res = await api(`/intake/visits/${S.visitId}/attachments`, { method:'POST', form: fd });
+
+    let msg = `<div class="banner info"><b>${res.uploaded.length} file(s) stored.</b>`;
+    if (res.rejected?.length) {
+      msg += ` ${res.rejected.length} rejected — ${res.rejected.map(r=>r.reason).join('; ')}`;
     }
+    msg += '</div>';
+
+    const needsOcr = upType !== 'wound_image';
+    if (needsOcr) {
+      b.innerHTML = '<span class="spin"></span> Running OCR…';
+      log('OCR running in background…','warn');
+      let done = 0;
+      for (let i=0;i<30;i++){
+        await new Promise(r=>setTimeout(r,2000));
+        const list = await api(`/intake/visits/${S.visitId}/attachments`);
+        done = list.filter(a=>a.ocrStatus==='done').length;
+        if (list.every(a=>a.ocrStatus!=='pending')) break;
+      }
+      msg += `<div class="banner ${done?'info':'warn'}">OCR finished on ${done} document(s).
+        Every result is flagged for human review — OCR never fills a clinical field on its own.</div>`;
+    } else {
+      msg += '<div class="banner info">Wound images are assessed visually; no OCR is run on them.</div>';
+    }
+
     $('#labResults').classList.remove('hidden');
-    $('#labResults').innerHTML = att.ocrStatus==='done'
-      ? `<div class="banner info">OCR complete · flagged for human review (always).
-          Abnormal values now feed the triage rules.</div>`
-      : `<div class="banner warn">OCR ${att.ocrStatus}. The document is stored; values were not extracted.</div>`;
+    $('#labResults').innerHTML = msg;
+    queue = []; renderQueue();
     setSteps(4);
-  }catch(e){} finally{ b.disabled=false; b.textContent='Upload & run OCR'; }
+  } catch(e){}
+  finally { b.disabled=false; renderQueue(); }
 };
 
 // ── Assessment ──
@@ -425,11 +536,50 @@ $('#assessBtn').onclick = async () => {
   const b=$('#assessBtn'); b.disabled=true; b.innerHTML='<span class="spin"></span> Assessing…';
   try{
     const a=await api(`/clinical/visits/${S.visitId}/assess`,{method:'POST'});
-    S.assessment=a; renderAssessment(a); setSteps(5);
+    S.assessment=a; renderAssessment(a); renderCarePlan(a.carePlan); setSteps(5);
     if(a.finalTier==='high'){ document.body.classList.add('danger'); await loadReferral(); }
     else document.body.classList.remove('danger');
   }catch(e){} finally{ b.disabled=false; b.textContent='Run AI assessment'; }
 };
+
+function renderCarePlan(cp){
+  if(!cp){ $('#carePlanCard').classList.add('hidden'); return; }
+  $('#carePlanCard').classList.remove('hidden');
+
+  const meds = cp.medications.length
+    ? cp.medications.map(m=>`<div class="med">
+        <b>${m.drug}</b>
+        <div class="d">${m.dose} · ${m.frequency}${m.maxDaily?` · max ${m.maxDaily}`:''}</div>
+        <small>⚠ ${m.warning}</small>
+        <small>Source: ${m.source} · up to ${m.maxDurationDays} days · pending doctor review</small>
+      </div>`).join('')
+    : '<p class="muted" style="font-size:13.5px">No medication is suggested for this tier.</p>';
+
+  const suppressed = cp.suppressedMedications?.length
+    ? '<h4>Withheld by safety gates</h4>' + cp.suppressedMedications.map(x=>
+        `<div class="sup"><b>${x.drug}</b> — ${x.reasons.join('; ')}</div>`).join('')
+    : '';
+
+  $('#carePlanOut').innerHTML = `
+    <div class="cp">
+      <h4>First aid — ${cp.firstAid.title}</h4>
+      <ol>${cp.firstAid.steps.map(x=>`<li>${x}</li>`).join('')}</ol>
+
+      <h4>Medication${cp.tier==='low'?'':' (not applicable at this tier)'}</h4>
+      ${meds}
+      ${suppressed}
+
+      <h4>Precautions</h4>
+      <ul>${cp.precautions.map(x=>`<li>${x}</li>`).join('')}</ul>
+
+      ${cp.diet.length?`<h4>Diet</h4><ul>${cp.diet.map(x=>`<li>${x}</li>`).join('')}</ul>`:''}
+
+      <div class="next"><b>${cp.nextStep.label}</b><br>
+        <span class="muted" style="font-size:13px">${cp.nextStep.detail}</span></div>
+
+      <p class="muted" style="font-size:12px;margin-top:14px">${cp.disclaimer}</p>
+    </div>`;
+}
 
 function renderAssessment(a){
   const hits=a.ruleHits.map(h=>`<code class="mono">${h.code}</code>`).join(' ') || '<span class="muted">none</span>';

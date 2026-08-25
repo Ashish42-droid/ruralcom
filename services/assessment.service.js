@@ -20,6 +20,7 @@ import { createLlmService } from './llm/index.js';
 import { toEngineVitals } from './vitals.service.js';
 import { labResultsForVisit } from './ocr/index.js';
 import { toTriageText } from './ocr/labParser.js';
+import { composeCarePlan } from './careplan/index.js';
 import { recordAudit } from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
 import logger from '../config/logger.js';
@@ -214,6 +215,17 @@ export async function assessVisit({ actor, accessToken, visitId, req }) {
 
   const assessment = await persist({ result, visit, actor });
 
+  const carePlan = composeCarePlan({
+    tier: result.finalTier,
+    symptomText: engineInput.symptomText,
+    patient: {
+      ...engineInput.patient,
+      allergies: engineInput.allergies,
+      history: engineInput.history,
+    },
+  });
+  await persistCarePlan(assessment.id, carePlan);
+
   // Advance the visit. Written with the service role because `final_tier`
   // is deliberately not client-updatable (migration 0008).
   const nextStatus = visitStatusForTier(result.finalTier);
@@ -257,7 +269,7 @@ export async function assessVisit({ actor, accessToken, visitId, req }) {
     req,
   });
 
-  return toApi(assessment, result.ruleHits);
+  return { ...toApi(assessment, result.ruleHits), carePlan };
 }
 
 function toApi(row, ruleHits = []) {
