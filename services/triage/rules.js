@@ -99,6 +99,31 @@ const CRITICAL_LAB_PHRASES = [
 /** Abnormal-but-not-critical labs still warrant a doctor. */
 const ABNORMAL_LAB_PHRASE = /\b(haemoglobin|platelet count|blood glucose|white cell count|creatinine|blood urea|total bilirubin) (low|high) at\b/i;
 
+/**
+ * Wound-image findings.
+ *
+ * Matched against the text services/vision/woundAnalysis.js produces, so
+ * an image finding escalates DETERMINISTICALLY rather than depending on
+ * the assessment model noticing it — the same treatment lab values get.
+ *
+ * Note what is absent: there is no rule that LOWERS a tier on a
+ * reassuring-looking photograph. A wound image is the input most easily
+ * degraded by poor light or a phone camera's processing, and "looks fine"
+ * is exactly the judgement it is least reliable at.
+ *
+ * >>> THRESHOLDS UNVALIDATED — same status as the vitals thresholds. <<<
+ */
+const WOUND_PHRASES = [
+  { match: /spreading redness/i, tier: 'high', label: 'wound_spreading_cellulitis' },
+  { match: /heavy active bleeding/i, tier: 'high', label: 'wound_heavy_bleeding' },
+  { match: /necrotic tissue/i, tier: 'high', label: 'wound_necrosis' },
+  { match: /full thickness wound/i, tier: 'medium', label: 'wound_full_thickness' },
+  { match: /purulent discharge/i, tier: 'medium', label: 'wound_purulent' },
+  { match: /local signs of infection/i, tier: 'medium', label: 'wound_infection_signs' },
+  { match: /visible foreign body/i, tier: 'medium', label: 'wound_foreign_body' },
+  { match: /large wound over 10 ?cm/i, tier: 'medium', label: 'wound_large' },
+];
+
 const MEDIUM_RISK_PHRASES = [
   { match: /persistent vomiting|vomiting everything/i, label: 'persistent_vomiting' },
   { match: /blood in (stool|urine|vomit|sputum)/i, label: 'occult_bleeding' },
@@ -242,6 +267,13 @@ export function evaluateRules(input = {}) {
 
   if (ABNORMAL_LAB_PHRASE.test(text)) {
     flag(TIER.MEDIUM, 'lab_abnormal', { source: 'lab' });
+  }
+
+  // ---- Wound image findings -------------------------------------------
+  for (const w of WOUND_PHRASES) {
+    if (w.match.test(text)) {
+      flag(w.tier === 'high' ? TIER.HIGH : TIER.MEDIUM, w.label, { source: 'wound_image' });
+    }
   }
 
   // ---- Missing data is NOT normal data --------------------------------

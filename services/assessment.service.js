@@ -18,8 +18,9 @@ import { supabaseAsUser, supabaseAdmin } from '../config/supabase.js';
 import { runAssessment } from './triage/engine.js';
 import { createLlmService } from './llm/index.js';
 import { toEngineVitals } from './vitals.service.js';
-import { labResultsForVisit } from './ocr/index.js';
+import { labResultsForVisit, woundFindingsForVisit } from './ocr/index.js';
 import { toTriageText } from './ocr/labParser.js';
+import { toTriageText as woundToTriageText } from './vision/woundAnalysis.js';
 import { composeCarePlan } from './careplan/index.js';
 import { recordAudit } from './audit.service.js';
 import ApiError from '../utils/ApiError.js';
@@ -97,12 +98,18 @@ async function gatherInput({ accessToken, visitId }) {
   const labs = await labResultsForVisit(visitId);
   const labText = toTriageText(labs);
 
+  // Wound findings join the same text for the same reason lab values do:
+  // one rule layer decides the tier, not three competing ones.
+  const wounds = await woundFindingsForVisit(visitId);
+  const woundText = wounds.map(woundToTriageText).filter(Boolean).join('. ');
+
   const symptoms = symptomsRes.data ?? [];
   // Prefer normalised English text where the translation layer has produced
   // it; the rule layer's red-flag phrases are matched against English.
   const symptomText = [
     symptoms.map((s) => s.normalized_text || s.raw_text).join('. '),
     labText,
+    woundText,
   ]
     .filter(Boolean)
     .join('. ')
@@ -128,6 +135,7 @@ async function gatherInput({ accessToken, visitId }) {
       hasVitals: Boolean(vitalsRes.data),
       labResults: labs.results.length,
       abnormalLabs: labs.abnormalCount,
+      woundImages: wounds.length,
     },
   };
 }
@@ -262,6 +270,7 @@ export async function assessVisit({ actor, accessToken, visitId, req }) {
       symptomEntries: counts.symptomEntries,
       labResults: counts.labResults,
       abnormalLabs: counts.abnormalLabs,
+      woundImages: counts.woundImages,
     },
     // A model trying to de-escalate below the rule floor is the one signal
     // that matters most in aggregate.

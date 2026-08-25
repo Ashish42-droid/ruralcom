@@ -45,6 +45,14 @@ const schema = z.object({
   SELF_HOSTED_LLM_BASE_URL: z.string().url().optional(),
   SELF_HOSTED_LLM_MODEL_ID: z.string().min(1).optional(),
 
+  // ---- Vision: wound image analysis (D-066) ----
+  // Mixed-case because that is the name this project's .env actually uses.
+  // The conventional SCREAMING_SNAKE spelling is accepted too, so a later
+  // rename cannot silently disable wound analysis.
+  Gemini_API_Key: z.string().min(10).optional(),
+  GEMINI_API_KEY: z.string().min(10).optional(),
+  GEMINI_VISION_MODEL: z.string().min(1).optional(),
+
   // ---- Video (D-039) ----
   // All three optional together: without them, video routes return 503
   // LIVEKIT_NOT_CONFIGURED rather than crashing the server at boot.

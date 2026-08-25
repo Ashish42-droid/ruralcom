@@ -24,6 +24,7 @@ import sharp from 'sharp';
 import { supabaseAdmin } from '../../config/supabase.js';
 import logger from '../../config/logger.js';
 import { parseLabReport } from './labParser.js';
+import { analyseWound, isVisionConfigured } from '../vision/woundAnalysis.js';
 
 /** Below this, the transcript is stored but flagged unusable. */
 export const MIN_USABLE_CONFIDENCE = 60;
@@ -137,6 +138,42 @@ export async function processAttachment(attachmentId) {
     return { outcome: `already_${attachment.ocr_status}` };
   }
 
+  // Wound images go to the vision model, not to OCR — there is no text on
+  // them to read. The rubric is stored in the same column so one code path
+  // answers "what do we know about this attachment".
+  if (attachment.type === 'wound_image') {
+    if (!isVisionConfigured()) {
+      await supabaseAdmin.from('attachments')
+        .update({ ocr_status: 'not_applicable', needs_human_review: true })
+        .eq('id', attachmentId);
+      return { outcome: 'vision_not_configured' };
+    }
+    try {
+      const { data: file, error: dlError } = await supabaseAdmin.storage
+        .from(attachment.bucket).download(attachment.storage_path);
+      if (dlError) throw new Error(dlError.message);
+
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const analysis = await analyseWound(buffer, attachment.mime);
+
+      await supabaseAdmin.from('attachments').update({
+        ocr_status: 'done',
+        ocr_text: JSON.stringify(analysis),
+        ocr_engine: analysis.model,
+        // Vision findings are observations, never conclusions.
+        needs_human_review: true,
+      }).eq('id', attachmentId);
+
+      return { outcome: 'done', analysis };
+    } catch (err) {
+      logger.error({ err, attachmentId }, 'Wound analysis failed');
+      await supabaseAdmin.from('attachments')
+        .update({ ocr_status: 'failed', needs_human_review: true })
+        .eq('id', attachmentId);
+      return { outcome: 'failed', error: err.message };
+    }
+  }
+
   // PDFs need a rasterisation step Tesseract cannot do alone. Marked
   // explicitly rather than left pending forever, so the queue does not
   // silently accumulate work nothing will ever pick up.
@@ -247,6 +284,27 @@ export async function labResultsForVisit(visitId) {
   merged.criticalCount = merged.results.filter((r) => r.severity === 'critical').length;
 
   return merged;
+}
+
+/** Wound analyses for a visit, newest first. */
+export async function woundFindingsForVisit(visitId) {
+  const { data } = await supabaseAdmin
+    .from('attachments')
+    .select('id, ocr_text, created_at')
+    .eq('visit_id', visitId)
+    .eq('type', 'wound_image')
+    .eq('ocr_status', 'done')
+    .order('created_at', { ascending: false });
+
+  return (data ?? []).flatMap((row) => {
+    try {
+      return [{ attachmentId: row.id, ...JSON.parse(row.ocr_text) }];
+    } catch {
+      // A row whose rubric will not parse is dropped rather than allowed to
+      // throw and take the whole assessment down with it.
+      return [];
+    }
+  });
 }
 
 export { parseLabReport };

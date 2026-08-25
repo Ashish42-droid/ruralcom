@@ -1441,3 +1441,67 @@ false positives (`only-export-components` cannot tell that the `Icon*`
 exports are components produced by a factory; `set-state-in-effect` cannot
 see that `load({initial:true})` skips its only synchronous setState) and
 are suppressed with the reasoning recorded inline.
+
+---
+
+## D-066 — Wound image analysis via Gemini, constrained to a rubric
+Owner supplied a Gemini key as `Gemini_API_Key`. Wound photographs now go
+to Gemini vision instead of OCR — there is no text on them to read.
+
+**Model choice was forced by the API.** `gemini-2.5-flash` returns 404 for
+new keys; Google's own error names `gemini-3.6-flash` as the replacement,
+which is what is used. Verified live before building on it.
+
+**A rubric, not a description.** The model scores fixed axes — size, depth,
+tissue appearance, infection signs, bleeding, foreign body — under a
+constrained `responseSchema`. A free-form "describe this wound" answer is
+not clinically usable and must never be shown to a health worker as an
+assessment: it reads as authoritative while being unfalsifiable. The scores
+then feed the SAME deterministic rule layer as vitals and labs, so an image
+finding escalates whether or not the assessment model notices it.
+
+**Wound findings can only escalate.** There is deliberately no rule that
+lowers a tier on a reassuring photograph. A wound image is the input most
+easily degraded by poor light or a phone camera's processing, and "looks
+fine" is the judgement it is least reliable at. Tested: a hypoxic patient
+stays HIGH regardless of a clean-looking wound photo.
+
+**The skin-tone limitation is surfaced, not buried.** Erythema is a primary
+infection signal and is documented to be harder to detect on brown and
+black skin, while public wound and dermatology datasets heavily
+under-represent both. So the model's confidence about "no redness" is
+systematically least trustworthy on exactly this system's population, and
+the clinical consequence is a missed early cellulitis. Two concrete
+responses: absence of erythema never lowers a tier, and every analysis
+carries an explicit limitation saying "no redness seen" does not mean no
+infection — judge by warmth, swelling, pain and the patient's account. A
+test asserts that text is always present.
+
+**The rubric schema has no field for treatment, medication or diagnosis** —
+asserted by test. Vision reports observations; medicine comes from the
+signed formulary.
+
+**Two findings from the real smoke test worth recording:**
+
+1. **The model refuses to score synthetic images.** All three SVG test
+   wounds return `isWoundVisible: false` with observations like "appears to
+   be a graphic illustration rather than a photograph of a real wound."
+   That is correct, safety-positive behaviour — and it means
+   `npm run vision:check` proves the WIRING only (request, schema, rule
+   mapping, timeouts). **Clinical behaviour cannot be validated without
+   real photographs**, which is a genuine gap, not a passing test.
+
+2. **Output varies between identical calls at temperature 0.** The same
+   image returned `isWoundVisible: true` on one call and `false` on
+   another, and one call failed schema validation outright. The
+   architecture already absorbs this — deterministic rules do the
+   escalating, and invalid output is rejected rather than trusted — but it
+   is a reason not to let a single vision read decide anything on its own.
+
+Also fixed while investigating: the validation error said only "failed
+schema validation" without naming the field. Against a model whose output
+varies between calls that is close to useless, so it now reports which
+field failed and why. Timeout raised from 25s to 45s — observed latency is
+6–10s with outliers past 25s, and this runs as a background job after
+upload where nobody is waiting, so losing a finding to a tight timeout is
+the worse trade.
